@@ -6,7 +6,7 @@ ESC = "\x1b"     # Escape
 CSI = f"{ESC}["  # Control sequence indicator
 
 EN_ALT_BUF = "?1049h"   # Enable Alternate Buffer
-DIS_ALT_BUF = "?1049l"  # Disabel Alternate Buffer
+DIS_ALT_BUF = "?1049l"  # Disable Alternate Buffer
 
 TITLE = "HTTP/TUI"
 TITLE_COLOR = 178
