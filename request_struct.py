@@ -14,10 +14,15 @@ class HttpMethod(Enum):
 
 
 @dataclass
-class Request():
+class HttpRequest():
     url: str
     body: object
     headers: dict
     version: float
     method: HttpMethod
     encrypted: bool  # HTTPS or HTTP
+
+    def __init__(self):
+        """ Hacky way for no-args 
+        constructor blame Pyright"""
+        pass
