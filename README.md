@@ -23,3 +23,6 @@ Use the following conventions within the `.http` file
 [@name=value] For variable definition
 {{name}}      For variable usage
 ```
+
+>[!NOTE]
+>Variables must be defined before a request
