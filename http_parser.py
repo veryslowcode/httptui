@@ -7,9 +7,7 @@ import re
 class ParserState(Enum):
     METADATA = 0
     HEADERS  = 1
-    BLANK    = 2
-    BODY     = 3
-    COMPLETE = 4
+    BODY     = 2
 
 
 def parse_http_file(path: str) -> list[HttpRequest]:
@@ -22,7 +20,7 @@ def parse_http_file(path: str) -> list[HttpRequest]:
     with file.open() as open_file:
         assert open_file.readable(), f"File [{path}] not readable"
 
-        current_request = HttpRequest("", None, {}, 1.1, HttpMethod.GET, False) 
+        current_request = HttpRequest("", None, {}, 1.1, HttpMethod.GET, False)
         current_state = ParserState.METADATA
 
         for line in open_file:
@@ -31,8 +29,7 @@ def parse_http_file(path: str) -> list[HttpRequest]:
                 continue  # Line is a comment
 
             elif line[0] == "@":
-                assert current_state == ParserState.METADATA or \
-                    current_state == ParserState.COMPLETE, \
+                assert current_state == ParserState.METADATA, \
                     "Variables must be defined prior to a request"
 
                 split = line.split("=")
@@ -44,32 +41,36 @@ def parse_http_file(path: str) -> list[HttpRequest]:
                 line = replace_variables(line, variables)
                 current_request = populate_metadata(line, current_request)
                 current_state = ParserState.HEADERS
-                           
-            elif current_state == ParserState.BLANK:
-                # This should be done before HEADERS
-                # as the end of headers is only
-                # indicated by a blank line
-                if line.strip() != "":
-                    current_state = ParserState.HEADERS
 
             elif current_state == ParserState.HEADERS:
                 if line.strip() == "":
-                    current_state = ParserState.BODY
-                    continue  # Indication of no headers
+                    if current_request.method == HttpMethod.GET or \
+                        current_request.method == HttpMethod.DELETE:
+                        requests.append(current_request)
+                        current_state = ParserState.METADATA
+                        # Reset the request
+                        current_request = HttpRequest("", None, {}, 1.1, 
+                                                      HttpMethod.GET, False)
+                    else:
+                        current_state = ParserState.BODY
+                    continue
+
                 line = replace_variables(line, variables)
                 current_request = populate_headers(line, current_request)
             
             elif current_state == ParserState.BODY:
                 if line.strip() == "":
-                    current_state = ParserState.COMPLETE
-                    continue  # Indication of no body
+                    requests.append(current_request)
+                    current_state = ParserState.METADATA
+                    # Reset the request
+                    current_request = HttpRequest("", None, {}, 1.1, 
+                                                  HttpMethod.GET, False)
+                    continue
+
                 line = replace_variables(line, variables)
-                current_state = ParserState.COMPLETE
+                continue
             
-        if current_state != ParserState.COMPLETE:
-            raise SyntaxError("Invalid format of .http file")
-        else:
-            requests.append(current_request)
+        requests.append(current_request)
 
     return requests
 
@@ -109,4 +110,3 @@ def populate_headers(line: str, request: HttpRequest) -> HttpRequest:
 
 def populate_body(line: str, request: HttpRequest) -> HttpRequest:
     return request
-
