@@ -1,6 +1,8 @@
 from request_struct import HttpRequest, HttpMethod
 from pathlib import Path
 from enum import Enum
+import re
+
 
 class ParserState(Enum):
     METADATA = 0
@@ -8,6 +10,7 @@ class ParserState(Enum):
     BLANK    = 2
     BODY     = 3
     COMPLETE = 4
+
 
 def parse_http_file(path: str) -> list[HttpRequest]:
     file = Path(path)
@@ -28,45 +31,40 @@ def parse_http_file(path: str) -> list[HttpRequest]:
                 continue  # Line is a comment
 
             elif line[0] == "@":
-                assert current_state == ParserState.COMPLETE, \
+                assert current_state == ParserState.METADATA or \
+                    current_state == ParserState.COMPLETE, \
                     "Variables must be defined prior to a request"
+
                 split = line.split("=")
-                key = split[0]
-                value = split[1]
+                key = split[0].replace("@", "")
+                value = split[1].rstrip()
                 variables[key] = value
 
             elif current_state == ParserState.METADATA:
-                split = line.split(" ")
-                current_request.method = (HttpMethod) (split[0].upper())
-                current_request.url = split[1]
-                current_request.version = (float) (split[2])
+                line = replace_variables(line, variables)
+                current_request = populate_metadata(line, current_request)
                 current_state = ParserState.HEADERS
                            
             elif current_state == ParserState.BLANK:
                 # This should be done before HEADERS
                 # as the end of headers is only
                 # indicated by a blank line
-                if line.strip != "":
+                if line.strip() != "":
                     current_state = ParserState.HEADERS
 
             elif current_state == ParserState.HEADERS:
                 if line.strip() == "":
                     current_state = ParserState.BODY
                     continue  # Indication of no headers
-                split = line.split(":")
-                key = split[0].strip()
-                value = split[1].strip()
-                current_request.headers[key] = value
+                line = replace_variables(line, variables)
+                current_request = populate_headers(line, current_request)
             
             elif current_state == ParserState.BODY:
                 if line.strip() == "":
                     current_state = ParserState.COMPLETE
                     continue  # Indication of no body
+                line = replace_variables(line, variables)
                 current_state = ParserState.COMPLETE
-                pass
-
-            else:
-                pass
             
         if current_state != ParserState.COMPLETE:
             raise SyntaxError("Invalid format of .http file")
@@ -74,3 +72,41 @@ def parse_http_file(path: str) -> list[HttpRequest]:
             requests.append(current_request)
 
     return requests
+
+
+def replace_variables(line: str, variables: dict) -> str:
+    matches = re.findall("{{[a-zA-Z0-9-_]+}}", line)
+
+    if len(matches) > 0:
+        for match in matches:
+            key = match.replace("{", "")
+            key = key.replace("}", "")
+
+            value = variables.get(key)
+            if value is None:
+                raise Exception(f"Variable {key} not defined")
+
+            line = line.replace(match, value)
+
+    return line
+
+
+def populate_metadata(line: str, request: HttpRequest) -> HttpRequest:
+    split = line.split(" ")
+    request.method = (HttpMethod) (split[0].upper())
+    request.url = split[1]
+    request.version = (float) (split[2])
+    return request
+
+
+def populate_headers(line: str, request: HttpRequest) -> HttpRequest:
+    split = line.split(":")
+    key = split[0].strip()
+    value = split[1].strip()
+    request.headers[key] = value
+    return request
+
+
+def populate_body(line: str, request: HttpRequest) -> HttpRequest:
+    return request
+
