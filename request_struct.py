@@ -22,7 +22,9 @@ class HttpRequest():
     method: HttpMethod
     encrypted: bool  # HTTPS or HTTP
 
-    def __init__(self):
-        """ Hacky way for no-args 
-        constructor blame Pyright"""
-        pass
+    def __str__(self) -> str:
+        metadata = f"{self.method.value} {self.url} {self.version}\n"
+        headers = f"{self.headers}\n" if self.headers else ""
+        body = f"{self.body}\n" if self.body is not None else ""
+        return metadata + headers + body
+        
