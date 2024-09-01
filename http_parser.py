@@ -5,39 +5,44 @@ import json
 import re
 
 
+# Extremely simple state machine
 class ParserState(Enum):
-    METADATA = 0
-    HEADERS = 1
-    BODY = 2
+    METADATA = 0  # [HTTP Method] [URL] [HTTP Version]
+    HEADERS = 1   # [Header Key]: [Header Value]
+    BODY = 2      # [Request Body]
 
 
 def parse_http_file(path: str) -> list[HttpRequest]:
+    """Primary function to parse an http (.http) file"""
+    assert path.split(".")[-1] == "http", "File must be of type http"
+
     file = Path(path)
     assert file.exists(), f"No file [{path}] found"
 
-    requests = []
-    variables = {}
+    requests = []   # The actual return
+    variables = {}  # Used for placeholder replacement
 
     with file.open() as o_file:
         assert o_file.readable(), f"File [{path}] not readable"
 
+        # Initial state for the machine
         c_req = HttpRequest("", {}, 1.1, None, HttpMethod.GET, False)
         c_state = ParserState.METADATA
-        c_body = ""
+        c_body = ""  # Body will just be a string, but will be validated
 
         for line in o_file:
 
             if line[0] == "#" or line[0:1] == "//":
                 continue  # Line is a comment
 
-            elif line[0] == "@":
+            elif line[0] == "@":  # Variable definition found
                 assert c_state == ParserState.METADATA, \
                     "Variables must be defined prior to a request"
                 variables = _populate_variables(line, variables)
 
             elif c_state == ParserState.METADATA:
                 if line.strip() == "":
-                    continue
+                    continue  # Indicates multiple blank lines between requests
 
                 line = _replace_variables(line, variables)
                 c_req = _populate_metadata(line, c_req)
@@ -46,6 +51,7 @@ def parse_http_file(path: str) -> list[HttpRequest]:
             elif c_state == ParserState.HEADERS:
                 if line.strip() == "":
                     result = _handle_headers_blank(c_req, requests, c_state)
+                    # Reset state
                     c_req = result.get("request")
                     c_state = result.get("state")
                     requests = result.get("requests")
@@ -55,8 +61,10 @@ def parse_http_file(path: str) -> list[HttpRequest]:
 
             elif c_state == ParserState.BODY:
                 if line.strip() == "":
+                    # Validation step of request body
                     c_req = _populate_body(c_body, c_req)
                     requests.append(c_req)
+                    # Reset state
                     c_body = ""
                     c_state = ParserState.METADATA
                     c_req = HttpRequest("", {}, 1.1, None,
@@ -66,15 +74,19 @@ def parse_http_file(path: str) -> list[HttpRequest]:
                     c_body += line
 
         if c_state == ParserState.BODY:
+            # Validation step of request body
             c_req = _populate_body(c_body, c_req)
 
         if c_req.url.strip() != "":
+            # Subtle check to ensure misc. line, such as comment
+            # is not counted as actual request
             requests.append(c_req)
 
     return requests
 
 
 def _populate_variables(line: str, variables: dict) -> dict:
+    """Counts anything with prefixed with a @ as a variable"""
     split = line.split("=")
     key = split[0].replace("@", "")
     value = split[1].rstrip()
@@ -83,6 +95,7 @@ def _populate_variables(line: str, variables: dict) -> dict:
 
 
 def _replace_variables(line: str, variables: dict) -> str:
+    """Replaces anything with contained in {{...}}"""
     matches = re.findall("{{[a-zA-Z0-9-_]+}}", line)
 
     if len(matches) > 0:
@@ -100,6 +113,7 @@ def _replace_variables(line: str, variables: dict) -> str:
 
 
 def _populate_metadata(line: str, request: HttpRequest) -> HttpRequest:
+    # [HTTP Method] [URL] [HTTP Version]
     split = line.split(" ")
     request.method = (HttpMethod)(split[0].upper())
     request.url = split[1]
@@ -108,6 +122,7 @@ def _populate_metadata(line: str, request: HttpRequest) -> HttpRequest:
 
 
 def _populate_headers(line: str, request: HttpRequest) -> HttpRequest:
+    """Responsible for [Header Key]: [Header Value] portion of http file"""
     split = line.split(":")
     key = split[0].strip()
     value = split[1].strip()
@@ -117,6 +132,9 @@ def _populate_headers(line: str, request: HttpRequest) -> HttpRequest:
 
 def _handle_headers_blank(request: HttpRequest, requests: list[HttpRequest],
                           state: ParserState) -> dict:
+    """Handles the case when a line is blank during the HEADERS phase
+    of the parsing state machine. This determines if the next block
+    should be another http request or the body of the current request"""
     result = {
         "state": state,
         "request": request,
@@ -126,12 +144,15 @@ def _handle_headers_blank(request: HttpRequest, requests: list[HttpRequest],
     method = request.method
 
     if method == HttpMethod.GET or method == HttpMethod.DELETE:
+        # No body necessary for this type of request, reset and continue
         result["requests"].append(request)
         result["state"] = ParserState.METADATA
         # Reset the request
         result["request"] = HttpRequest("", {}, 1.1, None,
                                         HttpMethod.GET, False)
     else:
+        # Body is necessary for this type of request, ensure we know
+        # what type of body and advance state machine
         content_type = request.headers.get("Content-Type")
         assert content_type is not None,      \
             "POST request requires header " + \
@@ -145,6 +166,9 @@ def _handle_headers_blank(request: HttpRequest, requests: list[HttpRequest],
 
 
 def _populate_body(body: str, request: HttpRequest) -> HttpRequest:
+    """Responsible for the [Request Body] portion of the http file.
+    This function also performs the validation of the body based
+    on the Content-Type header"""
     body_type = request.body.body_type
 
     if body_type == HttpBodyType.textplain:
@@ -161,12 +185,15 @@ def _populate_body(body: str, request: HttpRequest) -> HttpRequest:
         request.body.body = body
 
     elif body_type == HttpBodyType.multipartformdata:
+        # TODO implement
         raise NotImplementedError
 
     return request
 
 
 if __name__ == "__main__":
+    """Easily peek into the parsing
+    result of a given .http file"""
     import argparse
 
     description = "Test parsing of provided HTTP file"
