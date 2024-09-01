@@ -17,7 +17,7 @@ class HttpBodyType(Enum):
     textplain = "text/plain"
     json = "application/json"
     multipartformdata = "multipart/form-data"
-    xwwwurlformencoded = "x-www-url-formencoded"
+    xwwwformurlencoded = "application/x-www-form-urlencoded"
 
 
 @dataclass

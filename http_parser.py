@@ -151,7 +151,7 @@ def _populate_body(body: str, request: HttpRequest) -> HttpRequest:
     elif body_type == HttpBodyType.json:
         validated = json.loads(body)  # Validate json
         request.body.body = json.dumps(validated)
-    elif body_type == HttpBodyType.xwwwurlformencoded:
+    elif body_type == HttpBodyType.xwwwformurlencoded:
         pass
     elif body_type == HttpBodyType.multipartformdata:
         pass
