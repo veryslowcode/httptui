@@ -1,6 +1,7 @@
 from req_struct import HttpRequest, HttpMethod, HttpBody, HttpBodyType
 from pathlib import Path
 from enum import Enum
+import json
 import re
 
 
@@ -22,6 +23,7 @@ def parse_http_file(path: str) -> list[HttpRequest]:
 
         c_req = HttpRequest("", {}, 1.1, None, HttpMethod.GET, False)
         c_state = ParserState.METADATA
+        c_body = ""
 
         for line in o_file:
 
@@ -50,17 +52,19 @@ def parse_http_file(path: str) -> list[HttpRequest]:
 
             elif c_state == ParserState.BODY:
                 if line.strip() == "":
+                    c_req = _populate_body(c_body, c_req)
                     requests.append(c_req)
                     c_state = ParserState.METADATA
                     c_req = HttpRequest("", {}, 1.1, None,
                                         HttpMethod.GET, False)
                 else:
                     line = _replace_variables(line, variables)
+                    c_body += line
+
+        if c_state == ParserState.BODY:
+            c_req = _populate_body(c_body, c_req)
 
         requests.append(c_req)
-
-    for request in requests:
-        print(request)
 
     return requests
 
@@ -127,7 +131,7 @@ def _handle_headers_blank(request: HttpRequest, requests: list[HttpRequest],
         assert content_type is not None,      \
             "POST request requires header " + \
             "Content-Type to be set"
-        body_type = (HttpBodyType)(content_type)
+        body_type = (HttpBodyType)(content_type.lower())
         body = HttpBody(body_type, "")
         result["request"].body = body
         result["state"] = ParserState.BODY
@@ -135,5 +139,17 @@ def _handle_headers_blank(request: HttpRequest, requests: list[HttpRequest],
     return result
 
 
-def _populate_body(line: str, request: HttpRequest) -> HttpRequest:
+def _populate_body(body: str, request: HttpRequest) -> HttpRequest:
+    body_type = request.body.body_type
+
+    if body_type == HttpBodyType.textplain:
+        request.body.body = body
+    elif body_type == HttpBodyType.json:
+        validated = json.loads(body)  # Validate json
+        request.body.body = json.dumps(validated)
+    elif body_type == HttpBodyType.xwwwurlformencoded:
+        pass
+    elif body_type == HttpBodyType.multipartformdata:
+        pass
+
     return request
