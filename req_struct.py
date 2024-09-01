@@ -14,6 +14,7 @@ class HttpMethod(Enum):
 
 
 class HttpBodyType(Enum):
+    textplain = "text/plain"
     json = "application/json"
     multipartformdata = "multipart/form-data"
     xwwwurlformencoded = "x-www-url-formencoded"
