@@ -1,4 +1,4 @@
-from request_struct import HttpRequest, HttpMethod, HttpBody, HttpBodyType
+from req_struct import HttpRequest, HttpMethod, HttpBody, HttpBodyType
 from pathlib import Path
 from enum import Enum
 import re
@@ -17,68 +17,47 @@ def parse_http_file(path: str) -> list[HttpRequest]:
     requests = []
     variables = {}
 
-    with file.open() as open_file:
-        assert open_file.readable(), f"File [{path}] not readable"
+    with file.open() as o_file:
+        assert o_file.readable(), f"File [{path}] not readable"
 
-        current_request = HttpRequest("", None, {}, 1.1, HttpMethod.GET, False)
-        current_state = ParserState.METADATA
-        body_type = None
+        c_req = HttpRequest("", {}, 1.1, None, HttpMethod.GET, False)
+        c_state = ParserState.METADATA
 
-        for line in open_file:
+        for line in o_file:
 
             if line[0] == "#" or line[0:1] == "//":
                 continue  # Line is a comment
 
             elif line[0] == "@":
-                assert current_state == ParserState.METADATA, \
+                assert c_state == ParserState.METADATA, \
                     "Variables must be defined prior to a request"
+                variables = _populate_variables(line, variables)
 
-                split = line.split("=")
-                key = split[0].replace("@", "")
-                value = split[1].rstrip()
-                variables[key] = value
+            elif c_state == ParserState.METADATA:
+                line = _replace_variables(line, variables)
+                c_req = _populate_metadata(line, c_req)
+                c_state = ParserState.HEADERS
 
-            elif current_state == ParserState.METADATA:
-                line = replace_variables(line, variables)
-                current_request = populate_metadata(line, current_request)
-                current_state = ParserState.HEADERS
-
-            elif current_state == ParserState.HEADERS:
+            elif c_state == ParserState.HEADERS:
                 if line.strip() == "":
-                    if current_request.method == HttpMethod.GET or \
-                            current_request.method == HttpMethod.DELETE:
-                        requests.append(current_request)
-                        current_state = ParserState.METADATA
-                        # Reset the request
-                        current_request = HttpRequest("", None, {}, 1.1,
-                                                      HttpMethod.GET, False)
-                    else:
-                        content_type = current_request.headers \
-                            .get("Content-Type")
-                        assert content_type is not None, \
-                            "POST request requires header " + \
-                            "Content-Type to be set"
-                        global body_type
-                        body_type = (HttpBodyType)(content_type)
-                        current_state = ParserState.BODY
-                    continue
+                    result = _handle_headers_blank(c_req, requests, c_state)
+                    c_req = result.get("request")
+                    c_state = result.get("state")
+                    requests = result.get("requests")
+                else:
+                    line = _replace_variables(line, variables)
+                    c_req = _populate_headers(line, c_req)
 
-                line = replace_variables(line, variables)
-                current_request = populate_headers(line, current_request)
-
-            elif current_state == ParserState.BODY:
+            elif c_state == ParserState.BODY:
                 if line.strip() == "":
-                    requests.append(current_request)
-                    current_state = ParserState.METADATA
-                    # Reset the request
-                    current_request = HttpRequest("", None, {}, 1.1,
-                                                  HttpMethod.GET, False)
-                    continue
+                    requests.append(c_req)
+                    c_state = ParserState.METADATA
+                    c_req = HttpRequest("", {}, 1.1, None,
+                                        HttpMethod.GET, False)
+                else:
+                    line = _replace_variables(line, variables)
 
-                line = replace_variables(line, variables)
-                continue
-
-        requests.append(current_request)
+        requests.append(c_req)
 
     for request in requests:
         print(request)
@@ -86,7 +65,15 @@ def parse_http_file(path: str) -> list[HttpRequest]:
     return requests
 
 
-def replace_variables(line: str, variables: dict) -> str:
+def _populate_variables(line: str, variables: dict) -> dict:
+    split = line.split("=")
+    key = split[0].replace("@", "")
+    value = split[1].rstrip()
+    variables[key] = value
+    return variables
+
+
+def _replace_variables(line: str, variables: dict) -> str:
     matches = re.findall("{{[a-zA-Z0-9-_]+}}", line)
 
     if len(matches) > 0:
@@ -103,7 +90,7 @@ def replace_variables(line: str, variables: dict) -> str:
     return line
 
 
-def populate_metadata(line: str, request: HttpRequest) -> HttpRequest:
+def _populate_metadata(line: str, request: HttpRequest) -> HttpRequest:
     split = line.split(" ")
     request.method = (HttpMethod)(split[0].upper())
     request.url = split[1]
@@ -111,7 +98,7 @@ def populate_metadata(line: str, request: HttpRequest) -> HttpRequest:
     return request
 
 
-def populate_headers(line: str, request: HttpRequest) -> HttpRequest:
+def _populate_headers(line: str, request: HttpRequest) -> HttpRequest:
     split = line.split(":")
     key = split[0].strip()
     value = split[1].strip()
@@ -119,9 +106,34 @@ def populate_headers(line: str, request: HttpRequest) -> HttpRequest:
     return request
 
 
-def populate_body(line: str, request: HttpRequest) -> HttpRequest:
+def _handle_headers_blank(request: HttpRequest, requests: list[HttpRequest],
+                          state: ParserState) -> dict:
+    result = {
+        "state": state,
+        "request": request,
+        "requests": requests
+    }
+
+    method = request.method
+
+    if method == HttpMethod.GET or method == HttpMethod.DELETE:
+        result["requests"].append(request)
+        result["state"] = ParserState.METADATA
+        # Reset the request
+        result["request"] = HttpRequest("", {}, 1.1, None,
+                                        HttpMethod.GET, False)
+    else:
+        content_type = request.headers.get("Content-Type")
+        assert content_type is not None,      \
+            "POST request requires header " + \
+            "Content-Type to be set"
+        body_type = (HttpBodyType)(content_type)
+        body = HttpBody(body_type, "")
+        result["request"].body = body
+        result["state"] = ParserState.BODY
+
+    return result
+
+
+def _populate_body(line: str, request: HttpRequest) -> HttpRequest:
     return request
-
-
-if __name__ == "__main__":
-    parse_http_file("test.http")

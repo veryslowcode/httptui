@@ -24,6 +24,9 @@ class HttpBody():
     body_type: HttpBodyType
     body: str
 
+    def __str__(self) -> str:
+        return self.body
+
 
 @dataclass
 class HttpRequest():
