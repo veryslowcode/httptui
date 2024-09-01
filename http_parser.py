@@ -161,7 +161,7 @@ def _populate_body(body: str, request: HttpRequest) -> HttpRequest:
         request.body.body = body
 
     elif body_type == HttpBodyType.multipartformdata:
-        pass
+        raise NotImplementedError
 
     return request
 
