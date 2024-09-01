@@ -36,6 +36,9 @@ def parse_http_file(path: str) -> list[HttpRequest]:
                 variables = _populate_variables(line, variables)
 
             elif c_state == ParserState.METADATA:
+                if line.strip() == "":
+                    continue
+
                 line = _replace_variables(line, variables)
                 c_req = _populate_metadata(line, c_req)
                 c_state = ParserState.HEADERS
@@ -54,6 +57,7 @@ def parse_http_file(path: str) -> list[HttpRequest]:
                 if line.strip() == "":
                     c_req = _populate_body(c_body, c_req)
                     requests.append(c_req)
+                    c_body = ""
                     c_state = ParserState.METADATA
                     c_req = HttpRequest("", {}, 1.1, None,
                                         HttpMethod.GET, False)
