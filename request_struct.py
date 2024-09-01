@@ -13,12 +13,24 @@ class HttpMethod(Enum):
     OPTIONS = "OPTIONS"
 
 
+class HttpBodyType(Enum):
+    json = "application/json"
+    multipartformdata = "multipart/form-data"
+    xwwwurlformencoded = "x-www-url-formencoded"
+
+
+@dataclass
+class HttpBody():
+    body_type: HttpBodyType
+    body: str
+
+
 @dataclass
 class HttpRequest():
     url: str
-    body: object
     headers: dict
     version: float
+    body: HttpBody
     method: HttpMethod
     encrypted: bool  # HTTPS or HTTP
 
@@ -27,4 +39,3 @@ class HttpRequest():
         headers = f"{self.headers}\n" if self.headers else ""
         body = f"{self.body}\n" if self.body is not None else ""
         return metadata + headers + body
-        
