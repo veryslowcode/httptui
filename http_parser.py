@@ -68,7 +68,8 @@ def parse_http_file(path: str) -> list[HttpRequest]:
         if c_state == ParserState.BODY:
             c_req = _populate_body(c_body, c_req)
 
-        requests.append(c_req)
+        if c_req.url.strip() != "":
+            requests.append(c_req)
 
     return requests
 
@@ -148,11 +149,17 @@ def _populate_body(body: str, request: HttpRequest) -> HttpRequest:
 
     if body_type == HttpBodyType.textplain:
         request.body.body = body
+
     elif body_type == HttpBodyType.json:
         validated = json.loads(body)  # Validate json
         request.body.body = json.dumps(validated)
+
     elif body_type == HttpBodyType.xwwwformurlencoded:
-        pass
+        split = body.strip().split("&")
+        for pair in split:
+            assert re.fullmatch(".*=.*", pair)
+        request.body.body = body
+
     elif body_type == HttpBodyType.multipartformdata:
         pass
 
