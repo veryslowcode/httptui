@@ -164,3 +164,17 @@ def _populate_body(body: str, request: HttpRequest) -> HttpRequest:
         pass
 
     return request
+
+
+if __name__ == "__main__":
+    import argparse
+
+    description = "Test parsing of provided HTTP file"
+    parser = argparse.ArgumentParser(description=description)
+
+    parser.add_argument("file", help=".http file to parse")
+    arguments = parser.parse_args()
+
+    requests = parse_http_file(arguments.file)
+    for request in requests:
+        print(request)
