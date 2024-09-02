@@ -5,7 +5,7 @@ import shutil
 
 
 ESC = "\x1b"     # Escape
-CSI = f"{ESC}["  # Control sequence introducer
+CSI = f"{ESC}["  # Control Sequence Introducer
 
 EN_ALT_BUF = "?1049h"   # Enable Alternate Buffer
 DIS_ALT_BUF = "?1049l"  # Disable Alternate Buffer
@@ -33,6 +33,7 @@ def main() -> None:
 
     signal.signal(signal.SIGINT, signal_trap)
 
+    set_cursor(0, 0)
     # Defaults to 80 columns by 24 lines
     terminal_size = shutil.get_terminal_size()
     render_title(terminal_size.columns)
@@ -46,13 +47,13 @@ def main() -> None:
 
 
 def enable_buffer() -> None:
-    ''' Clears the screen '''
+    '''Clears the screen'''
     print(f"{CSI}{EN_ALT_BUF}")
 
 
 def disable_buffer() -> None:
-    ''' Reverts screen back to
-    previous state before script '''
+    '''Reverts screen back to
+    previous state before script'''
     print(f"{CSI}{DIS_ALT_BUF}")
 
 
@@ -62,6 +63,19 @@ def set_foreground(color: int) -> None:
 
 def reset_style() -> None:
     print(f"{CSI}0m", end="")
+
+
+def set_cursor(x: int, y: int) -> None:
+    '''
+    Escape sequence to move the
+    cursor with the assumption that
+    location (0,0) is at the top
+    left of the screen.
+
+    It also assumes that {x} and {y}
+    are based on character size.
+    '''
+    print(f'{CSI}{y};{x}H', end="")
 
 
 def render_title(width: int) -> None:
