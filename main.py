@@ -1,9 +1,11 @@
+import sys
 import math
+import signal
 import shutil
 
 
 ESC = "\x1b"     # Escape
-CSI = f"{ESC}["  # Control sequence indicator
+CSI = f"{ESC}["  # Control sequence introducer
 
 EN_ALT_BUF = "?1049h"   # Enable Alternate Buffer
 DIS_ALT_BUF = "?1049l"  # Disable Alternate Buffer
@@ -13,14 +15,34 @@ TITLE_COLOR = 178
 
 
 def main() -> None:
+    if sys.platform == "win32":
+        import ansi_win
+        driver = ansi_win
+    else:
+        # TODO implement *nix
+        pass
+
+    o_state = driver.initialize()
     enable_buffer()
+
+    def signal_trap(sig, frame) -> None:
+        '''Ensures terminal state is restored'''
+        disable_buffer()
+        driver.reset(o_state)
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, signal_trap)
 
     # Defaults to 80 columns by 24 lines
     terminal_size = shutil.get_terminal_size()
     render_title(terminal_size.columns)
 
-    while True:
-        pass
+    i = 0
+    while i < 100000000:
+        i += 1
+
+    disable_buffer()
+    driver.reset(o_state)
 
 
 def enable_buffer() -> None:
