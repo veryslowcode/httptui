@@ -239,6 +239,13 @@ def render_borders(width: int, height: int, theme: Theme,
         set_cursor(x_offset, index + 3)
         print(v_border)
 
+    # Horizontal request definition
+    # and response separator
+    x_remain = width - x_offset
+    y_half = math.floor((height - 3) / 2)
+    set_cursor(x_offset + 1, y_half + 3)
+    print(f"{h_border * x_remain}")
+
 
 if __name__ == "__main__":
     main()
