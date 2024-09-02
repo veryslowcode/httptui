@@ -1,5 +1,10 @@
 from ctypes.wintypes import DWORD
+from enum import Enum
 import ctypes
+
+
+class KeyCodes(Enum):
+    QUIT = ""  # TODO discover
 
 
 # Windows specific constants
