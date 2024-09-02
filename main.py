@@ -3,36 +3,66 @@ import signal
 import shutil
 
 
-ESC = "\x1b"     # Escape
-CSI = f"{ESC}["  # Control Sequence Introducer
+ESC = "\x1b"            # Escape
+CSI = f"{ESC}["         # Control Sequence Introducer
 
 EN_ALT_BUF = "?1049h"   # Enable Alternate Buffer
 DIS_ALT_BUF = "?1049l"  # Disable Alternate Buffer
 
 TITLE = "HTTP/TUI"
-TITLE_COLOR = 178
+TITLE_COLOR = 69
 
 
 def main() -> None:
     if sys.platform == "win32":
-        import ansi_win
-        driver = ansi_win
+        _win_main()
     else:
-        import ansi_nix
-        driver = ansi_nix
+        _nix_main()
 
-    ostate = driver.initialize()
-    enable_buffer()
+
+def _win_main() -> None:
+    import ansi_win
+
+    driver = ansi_win
+    ostate, istate = driver.initialize()
 
     def signal_trap(sig, frame) -> None:
         '''Ensures terminal state is restored'''
         disable_buffer()
-        driver.reset(ostate)
+        driver.reset(ostate, istate)
         sys.exit(0)
 
     signal.signal(signal.SIGINT, signal_trap)
 
+    _main_loop(driver)
+
+    driver.reset(ostate, istate)
+
+
+def _nix_main() -> None:
+    import ansi_nix
+
+    driver = ansi_nix
+    orig_state = driver.initialize()
+
+    def signal_trap(sig, frame) -> None:
+        '''Ensures terminal state is restored'''
+        disable_buffer()
+        driver.reset(orig_state)
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, signal_trap)
+
+    _main_loop(driver)
+
+    driver.reset(orig_state)
+
+
+def _main_loop(driver: any) -> None:
+    enable_buffer()
+
     set_cursor(1, 1)
+
     # Defaults to 80 columns by 24 lines
     terminal_size = shutil.get_terminal_size()
     render_title(terminal_size.columns)
@@ -44,7 +74,6 @@ def main() -> None:
             f_quit = True
 
     disable_buffer()
-    driver.reset(ostate)
 
 
 def enable_buffer() -> None:
