@@ -1,4 +1,5 @@
 import sys
+import math
 import signal
 import shutil
 import argparse
@@ -22,15 +23,31 @@ class Theme:
     border_color: int
 
 
+@dataclass
+class Border:
+    t_single = "┬"
+    t_double = "╦"
+    h_single = "─"
+    h_double = "═"
+    v_single = "│"
+    v_double = "║"
+
+
 class ColorMode(Enum):
     Bit4 = "4bit"
     Bit8 = "8bit"
+
+
+class BorderStyle(Enum):
+    Single = "single"
+    Double = "double"
 
 
 @dataclass
 class Arguments:
     theme_file: str = "theme.ini"
     color_mode: ColorMode = ColorMode.Bit8
+    border_style: BorderStyle = BorderStyle.Single
 
 
 def main() -> None:
@@ -52,6 +69,10 @@ def parse_args() -> Arguments:
                         help="Color style: '4bit' or '8bit' " +
                         "(defaults to '8bit')")
 
+    parser.add_argument("-b", "--border",
+                        help="Border style: 'single' or 'double' " +
+                        "(defaults to 'single')")
+
     args = Arguments()
     parsed_args = parser.parse_args()
 
@@ -61,6 +82,10 @@ def parse_args() -> Arguments:
     if parsed_args.mode is not None:
         mode = (ColorMode)(parsed_args.mode.lower())
         args.color_mode = mode
+
+    if parsed_args.border is not None:
+        border = (BorderStyle)(parsed_args.border.lower())
+        args.border_style = border
 
     return args
 
@@ -116,8 +141,9 @@ def _main_loop(driver: any, args: Arguments) -> None:
     set_cursor(1, 1)
 
     # Defaults to 80 columns by 24 lines
-    terminal_size = shutil.get_terminal_size()
-    render_title(terminal_size.columns, theme, args.color_mode)
+    size = shutil.get_terminal_size()
+    render_title(size.columns, theme, args.color_mode)
+    render_borders(size.columns, size.lines, theme, args)
 
     f_quit = False  # Flag quit
     while not f_quit:
@@ -179,10 +205,34 @@ def render_title(width: int, theme: Theme, mode: ColorMode) -> None:
     set_foreground(theme.title_color, mode)
     print(f"{offset * ' '}{TITLE}", end="")
     reset_style()
+
+
+def render_borders(width: int, height: int, theme: Theme,
+                   args: Arguments) -> None:
+    x_offset = math.floor(width / 4)
+    set_foreground(theme.border_color, args.color_mode)
+    if args.border_style == BorderStyle.Single:
+        h_border = Border.h_single
+        v_border = Border.v_single
+        t_border = Border.t_single
+    else:
+        h_border = Border.h_double
+        v_border = Border.v_double
+        t_border = Border.t_double
+
+    # Horizontal title separator
     set_cursor(1, 2)
-    set_foreground(theme.border_color, mode)
-    print(f"{'-' * width}")
+    print(f"{h_border * width}")
     reset_style()
+
+    # Connector
+    set_cursor(x_offset, 2)
+    print(t_border)
+
+    # Vertical request list separator
+    for index in range(height - 3):
+        set_cursor(x_offset, index + 3)
+        print(v_border)
 
 
 if __name__ == "__main__":
