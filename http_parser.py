@@ -43,6 +43,10 @@ def parse_http_file(path: str) -> list[HttpRequest]:
             elif c_state == ParserState.METADATA:
                 if line.strip() == "":
                     continue  # Indicates multiple blank lines between requests
+                if line[0] == "&":
+                    name = line.replace("&", "")
+                    c_req.name = name
+                    continue
 
                 line = _replace_variables(line, variables)
                 c_req = _populate_metadata(line, c_req)

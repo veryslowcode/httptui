@@ -18,6 +18,7 @@ TUI application for storing and sending HTTP requests.
 Use the following conventions within the `.http` file
 ```sh
 # or //  For Comments
+&        For request name
 
 [@name=value] For variable definition
 {{name}}      For variable usage
@@ -25,3 +26,5 @@ Use the following conventions within the `.http` file
 
 >[!NOTE]
 >Variables must be defined before a request
+>And names (optional) must be defined before
+> a request, but after variables

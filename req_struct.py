@@ -37,9 +37,10 @@ class HttpRequest():
     body: HttpBody
     method: HttpMethod
     encrypted: bool  # HTTPS or HTTP
+    name: str = ""   # Non-essential
 
     def __str__(self) -> str:
         metadata = f"{self.method.value} {self.url} {self.version}\n"
         headers = f"{self.headers}\n" if self.headers else ""
         body = f"{self.body}\n" if self.body is not None else ""
-        return metadata + headers + body
+        return self.name + metadata + headers + body
