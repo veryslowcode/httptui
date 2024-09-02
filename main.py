@@ -1,5 +1,4 @@
 import sys
-import math
 import signal
 import shutil
 
@@ -19,31 +18,33 @@ def main() -> None:
         import ansi_win
         driver = ansi_win
     else:
-        # TODO implement *nix
-        pass
+        import ansi_nix
+        driver = ansi_nix
 
-    o_state = driver.initialize()
+    ostate = driver.initialize()
     enable_buffer()
 
     def signal_trap(sig, frame) -> None:
         '''Ensures terminal state is restored'''
         disable_buffer()
-        driver.reset(o_state)
+        driver.reset(ostate)
         sys.exit(0)
 
     signal.signal(signal.SIGINT, signal_trap)
 
-    set_cursor(0, 0)
+    set_cursor(1, 1)
     # Defaults to 80 columns by 24 lines
     terminal_size = shutil.get_terminal_size()
     render_title(terminal_size.columns)
 
-    i = 0
-    while i < 100000000:
-        i += 1
+    f_quit = False  # Flag quit
+    while not f_quit:
+        key = sys.stdin.read(1)
+        if key == driver.KeyCodes.QUIT.value:
+            f_quit = True
 
     disable_buffer()
-    driver.reset(o_state)
+    driver.reset(ostate)
 
 
 def enable_buffer() -> None:
@@ -69,7 +70,7 @@ def set_cursor(x: int, y: int) -> None:
     '''
     Escape sequence to move the
     cursor with the assumption that
-    location (0,0) is at the top
+    location (1,1) is at the top
     left of the screen.
 
     It also assumes that {x} and {y}
@@ -79,12 +80,11 @@ def set_cursor(x: int, y: int) -> None:
 
 
 def render_title(width: int) -> None:
-    offset = math.floor(width / 2) - len(TITLE)
-
+    offset = width - (len(TITLE) + 4)
     set_foreground(TITLE_COLOR)
-    print(f"{' ' * offset}{TITLE}")
+    print(f"{offset * ' '}{TITLE}", end="")
     reset_style()
-
+    set_cursor(1, 2)
     print(f"{'-' * width}")
 
 
