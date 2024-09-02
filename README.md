@@ -7,7 +7,7 @@ TUI application for storing and sending HTTP requests.
 `.http` file format as described from the following 
 [Microsoft Documentation](https://learn.microsoft.com/en-us/aspnet/core/test/http-files?view=aspnetcore-8.0)
 
-```ps1
+```sh
 [HTTP Method] [URL] [HTTP Version]
 [Header Key]: [Header Value]
 ...
@@ -16,7 +16,7 @@ TUI application for storing and sending HTTP requests.
 ```
 
 Use the following conventions within the `.http` file
-```ps1
+```sh
 # or //  For Comments
 
 [@name=value] For variable definition
