@@ -1,10 +1,11 @@
 import sys
 import math
-import signal
 import shutil
+import signal
 import argparse
 import configparser
 from enum import Enum
+from pathlib import Path
 from dataclasses import dataclass
 
 
@@ -15,6 +16,11 @@ CSI = f"{ESC}["         # Control Sequence Introducer
 
 EN_ALT_BUF = "?1049h"   # Enable Alternate Buffer
 DIS_ALT_BUF = "?1049l"  # Disable Alternate Buffer
+
+
+class ColorMode(Enum):
+    Bit4 = "4bit"
+    Bit8 = "8bit"
 
 
 @dataclass
@@ -31,11 +37,6 @@ class Border:
     h_double = "═"
     v_single = "│"
     v_double = "║"
-
-
-class ColorMode(Enum):
-    Bit4 = "4bit"
-    Bit8 = "8bit"
 
 
 class BorderStyle(Enum):
@@ -78,6 +79,10 @@ def parse_args() -> Arguments:
 
     if parsed_args.theme is not None:
         args.theme_file = parsed_args.theme
+    else:
+        # Ensure we can run this script with anywhere
+        scriptdir = Path(__file__).parent
+        args.theme_file = Path(scriptdir, "theme.ini")
 
     if parsed_args.mode is not None:
         mode = (ColorMode)(parsed_args.mode.lower())
