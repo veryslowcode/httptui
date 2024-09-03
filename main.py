@@ -7,6 +7,7 @@ import argparse
 import threading
 import configparser
 from enum import Enum
+from queue import Queue
 from pathlib import Path
 from dataclasses import dataclass
 
@@ -144,36 +145,41 @@ def _nix_main(args: Arguments) -> None:
 def _main_loop(driver: any, args: Arguments) -> None:
     theme = parse_colors(args)
     enable_buffer()
+    hide_cursor()
+    bus = Queue()
 
-    event_thread = threading.Thread(target=event_loop)
-    render_thread = threading.Thread(target=render_loop, args=(theme, args))
+    render_thread = threading.Thread(target=render_loop,
+                                     args=(bus, theme, args),
+                                     daemon=True)
     threads = {
-        "render_thread": render_thread,
-        "event_thread": event_thread
+        "render_thread": render_thread
+        # TODO add request thread
     }
     threads["render_thread"].start()
 
     f_quit = False  # Flag quit
     while not f_quit:
         key = sys.stdin.read(1)
-        if key == driver.KeyCodes.QUIT.value:
-            f_quit = True
+        match key:
+            case driver.KeyCodes.QUIT.value:
+                f_quit = True
 
+    show_cursor()
     disable_buffer()
 
 
-def render_loop(theme: Theme, args: Arguments) -> None:
-    while True:  # TODO change based on flag
+def render_loop(bus: Queue, theme: Theme, args: Arguments) -> None:
+    while True:
+        if not bus.empty():
+            _ = bus.get()
+            # TODO handle messages
+
         # Defaults to 80 columns by 24 lines
         size = shutil.get_terminal_size()
         clear_screen()
         render_title(size.columns, theme, args.color_mode)
         render_borders(size.columns, size.lines, theme, args)
         time.sleep(0.1)  # 100 miliseconds
-
-
-def event_loop(driver: any) -> None:
-    pass
 
 
 def parse_colors(args: Arguments) -> Theme:
@@ -198,6 +204,14 @@ def disable_buffer() -> None:
     '''Reverts screen back to
     previous state before script'''
     print(f"{CSI}{DIS_ALT_BUF}")
+
+
+def hide_cursor() -> None:
+    print(f"{CSI}?25l")
+
+
+def show_cursor() -> None:
+    print(f"{CSI}?25h")
 
 
 def clear_screen() -> None:
