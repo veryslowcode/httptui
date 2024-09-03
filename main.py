@@ -1,8 +1,10 @@
 import sys
 import math
+import time
 import shutil
 import signal
 import argparse
+import threading
 import configparser
 from enum import Enum
 from pathlib import Path
@@ -141,14 +143,15 @@ def _nix_main(args: Arguments) -> None:
 
 def _main_loop(driver: any, args: Arguments) -> None:
     theme = parse_colors(args)
-
     enable_buffer()
-    set_cursor(1, 1)
 
-    # Defaults to 80 columns by 24 lines
-    size = shutil.get_terminal_size()
-    render_title(size.columns, theme, args.color_mode)
-    render_borders(size.columns, size.lines, theme, args)
+    event_thread = threading.Thread(target=event_loop)
+    render_thread = threading.Thread(target=render_loop, args=(theme, args))
+    threads = {
+        "render_thread": render_thread,
+        "event_thread": event_thread
+    }
+    threads["render_thread"].start()
 
     f_quit = False  # Flag quit
     while not f_quit:
@@ -157,6 +160,20 @@ def _main_loop(driver: any, args: Arguments) -> None:
             f_quit = True
 
     disable_buffer()
+
+
+def render_loop(theme: Theme, args: Arguments) -> None:
+    while True:  # TODO change based on flag
+        # Defaults to 80 columns by 24 lines
+        size = shutil.get_terminal_size()
+        clear_screen()
+        render_title(size.columns, theme, args.color_mode)
+        render_borders(size.columns, size.lines, theme, args)
+        time.sleep(0.1)  # 100 miliseconds
+
+
+def event_loop(driver: any) -> None:
+    pass
 
 
 def parse_colors(args: Arguments) -> Theme:
@@ -173,7 +190,7 @@ def parse_colors(args: Arguments) -> Theme:
 
 
 def enable_buffer() -> None:
-    '''Clears the screen'''
+    '''Creates a new screen buffer'''
     print(f"{CSI}{EN_ALT_BUF}")
 
 
@@ -181,6 +198,10 @@ def disable_buffer() -> None:
     '''Reverts screen back to
     previous state before script'''
     print(f"{CSI}{DIS_ALT_BUF}")
+
+
+def clear_screen() -> None:
+    print(f"{CSI}2J")
 
 
 def set_foreground(color: int, mode: ColorMode) -> None:
@@ -206,6 +227,7 @@ def set_cursor(x: int, y: int) -> None:
 
 
 def render_title(width: int, theme: Theme, mode: ColorMode) -> None:
+    set_cursor(1, 1)
     offset = width - (len(TITLE) + 4)
     set_foreground(theme.title_color, mode)
     print(f"{offset * ' '}{TITLE}", end="")
