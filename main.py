@@ -54,6 +54,14 @@ class Arguments:
     border_style: BorderStyle = BorderStyle.Single
 
 
+@dataclass
+class RenderState:
+    theme:  Theme
+    args:   Arguments
+    size:   tuple[int, int]
+    active: int
+
+
 def main() -> None:
     args = parse_args()
     if sys.platform == "win32":
@@ -148,14 +156,14 @@ def _main_loop(driver: any, args: Arguments) -> None:
     hide_cursor()
     bus = Queue()
 
-    render_thread = threading.Thread(target=render_loop,
+    update_thread = threading.Thread(target=update_loop,
                                      args=(bus, theme, args),
                                      daemon=True)
     threads = {
-        "render_thread": render_thread
+        "update_thread": update_thread
         # TODO add request thread
     }
-    threads["render_thread"].start()
+    threads["update_thread"].start()
 
     f_quit = False  # Flag quit
     while not f_quit:
@@ -168,18 +176,33 @@ def _main_loop(driver: any, args: Arguments) -> None:
     disable_buffer()
 
 
-def render_loop(bus: Queue, theme: Theme, args: Arguments) -> None:
+def update_loop(bus: Queue, theme: Theme, args: Arguments) -> None:
+    # Defaults to 80 columns by 24 lines
+    size = shutil.get_terminal_size()
+    state = RenderState(theme, args, size, 0)
+    render(state)
+
     while True:
+        updateflag = False
         if not bus.empty():
             _ = bus.get()
             # TODO handle messages
 
-        # Defaults to 80 columns by 24 lines
-        size = shutil.get_terminal_size()
-        clear_screen()
-        render_title(size.columns, theme, args.color_mode)
-        render_borders(size.columns, size.lines, theme, args)
+        new_size = shutil.get_terminal_size()
+        if new_size != state.size:
+            state.size = new_size
+            updateflag = True
+
+        if updateflag:
+            render(state)
         time.sleep(0.1)  # 100 miliseconds
+
+
+def render(state: RenderState) -> None:
+    clear_screen()
+    render_title(state.size.columns, state.theme, state.args.color_mode)
+    render_borders(state.size.columns, state.size.lines,
+                   state.theme, state.args)
 
 
 def parse_colors(args: Arguments) -> Theme:
