@@ -41,6 +41,8 @@ class Border:
     h_double = "═"
     v_single = "│"
     v_double = "║"
+    c_single = "├"
+    c_double = "╠"
 
 
 class BorderStyle(Enum):
@@ -56,9 +58,9 @@ class Arguments:
 
 
 class Section(Enum):
-    List = "list"
-    Request = "request"
-    Response = "response"
+    List = 0
+    Request = 1
+    Response = 2
 
 
 @dataclass
@@ -67,6 +69,13 @@ class RenderState:
     args:   Arguments
     size:   tuple[int, int]
     active: Section
+
+
+class Message(Enum):
+    MoveUp = 0
+    MoveDown = 1
+    MoveLeft = 2
+    MoveRight = 3
 
 
 def main() -> None:
@@ -178,6 +187,14 @@ def _main_loop(driver: any, args: Arguments) -> None:
         match key:
             case driver.KeyCodes.QUIT.value:
                 f_quit = True
+            case driver.KeyCodes.UP.value:
+                bus.put(Message.MoveUp)
+            case driver.KeyCodes.DOWN.value:
+                bus.put(Message.MoveDown)
+            case driver.KeyCodes.LEFT.value:
+                bus.put(Message.MoveLeft)
+            case driver.KeyCodes.RIGHT.value:
+                bus.put(Message.MoveRight)
 
     show_cursor()
     disable_buffer()
@@ -192,8 +209,27 @@ def update_loop(bus: Queue, theme: Theme, args: Arguments) -> None:
     while True:
         updateflag = False
         if not bus.empty():
-            _ = bus.get()
-            # TODO handle messages
+            updateflag = True
+            message = bus.get()
+            match message:
+                case Message.MoveUp:
+                    # TODO implement
+                    pass
+                case Message.MoveDown:
+                    # TODO implement
+                    pass
+                case Message.MoveLeft:
+                    current = state.active.value
+                    current -= 1
+                    if current < 0:
+                        current = 2
+                    state.active = (Section)(current)
+                case Message.MoveRight:
+                    current = state.active.value
+                    current += 1
+                    if current > 2:
+                        current = 0
+                    state.active = (Section)(current)
 
         new_size = shutil.get_terminal_size()
         if new_size != state.size:
@@ -209,6 +245,7 @@ def render(state: RenderState) -> None:
     clear_screen()
     render_title(state)
     render_borders(state)
+    render_lables(state)
 
 
 def parse_colors(args: Arguments) -> Theme:
@@ -281,72 +318,72 @@ def render_title(state: RenderState) -> None:
 
 def render_borders(state: RenderState) -> None:
     adj_height = state.size.lines - 3  # Account for title
-    # List width, req/resp width, req/resp height
-    lw, rw, rh = calculate_areas(state.size.columns, adj_height)
+    x_offset = math.floor(state.size.columns / 4)
 
     if state.args.border_style == BorderStyle.Single:
         h_border = Border.h_single
         v_border = Border.v_single
         t_border = Border.t_single
+        c_border = Border.c_single
     else:
         h_border = Border.h_double
         v_border = Border.v_double
         t_border = Border.t_double
+        c_border = Border.c_double
 
+    set_foreground(state.theme.border_color, state.args.color_mode)
     set_cursor(1, 2)
-    set_foreground(
-        state.theme.active_color if state.active == Section.List
-        else state.theme.border_color,
-        state.args.color_mode)
-    print(f"{h_border * lw}")
+    print(f"{h_border * state.size.columns}")
 
-    set_cursor(lw + 1, 2)
-    set_foreground(
-        state.theme.active_color if state.active == Section.Request
-        else state.theme.border_color,
-        state.args.color_mode
-    )
-    print(f"{h_border * rw}", end="")
+    for index in range(adj_height + 1):
+        set_cursor(x_offset, index + 3)
+        print(v_border, end="")
 
-    set_cursor(lw, 2)
-    set_foreground(
-        state.theme.active_color if state.active == Section.List
-        or state.active == Section.Request
-        else state.theme.border_color,
-        state.args.color_mode
-    )
+    set_cursor(x_offset, 2)
     print(t_border)
 
-    set_foreground(
-        state.theme.active_color if state.active == Section.Request
-        or state.active == Section.List
-        else state.theme.border_color,
-        state.args.color_mode
-    )
-    for index in range(rh):
-        set_cursor(lw, index + 3)
-        print(v_border)
+    middle = math.floor(adj_height / 2)
+    remainder = state.size.columns - x_offset
+    set_cursor(x_offset + 1, middle)
+    print(f"{h_border * remainder}", end="")
 
-    set_foreground(
-        state.theme.active_color if state.active == Section.Response
-        or state.active == Section.List
-        else state.theme.border_color,
-        state.args.color_mode
-    )
-    # Compensate for potential one loss
-    comp_height = state.size.lines - rh
-    for index in range(comp_height):
-        set_cursor(lw, (index + rh))
-        print(v_border)
+    set_cursor(x_offset, middle)
+    print(c_border)
 
     reset_style()
 
 
-def calculate_areas(width: int, height: int) -> (int, int, int):
-    lw = math.floor(width / 4)   # List width
-    rw = width - lw              # Request/Response width
-    rh = math.floor(height / 2)  # Request/Response rr_height
-    return (lw, rw, rh)
+def render_lables(state: RenderState) -> None:
+    x_offset = math.floor(state.size.columns / 4)
+    adj_height = state.size.lines - 3  # Account for title
+    middle = math.floor(adj_height / 2)
+
+    set_cursor(2, 2)
+    if state.active == Section.List:
+        set_foreground(
+            state.theme.active_color,
+            state.args.color_mode
+        )
+    print(" List ")
+    reset_style()
+
+    set_cursor(x_offset + 2, 2)
+    if state.active == Section.Request:
+        set_foreground(
+            state.theme.active_color,
+            state.args.color_mode
+        )
+    print(" Request ")
+    reset_style()
+
+    set_cursor(x_offset + 2, middle)
+    if state.active == Section.Response:
+        set_foreground(
+            state.theme.active_color,
+            state.args.color_mode
+        )
+    print(" Response ")
+    reset_style()
 
 
 if __name__ == "__main__":

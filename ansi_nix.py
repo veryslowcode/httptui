@@ -6,6 +6,10 @@ import termios
 
 class KeyCodes(Enum):
     QUIT = "\x11"
+    UP = "k"
+    DOWN = "j"
+    LEFT = "h"
+    RIGHT = "l"
 
 
 def initialize() -> list:
