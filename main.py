@@ -30,6 +30,7 @@ class ColorMode(Enum):
 class Theme:
     title_color:  int
     border_color: int
+    active_color: int
 
 
 @dataclass
@@ -54,12 +55,18 @@ class Arguments:
     border_style: BorderStyle = BorderStyle.Single
 
 
+class Section(Enum):
+    List = "list"
+    Request = "request"
+    Response = "response"
+
+
 @dataclass
 class RenderState:
     theme:  Theme
     args:   Arguments
     size:   tuple[int, int]
-    active: int
+    active: Section
 
 
 def main() -> None:
@@ -179,7 +186,7 @@ def _main_loop(driver: any, args: Arguments) -> None:
 def update_loop(bus: Queue, theme: Theme, args: Arguments) -> None:
     # Defaults to 80 columns by 24 lines
     size = shutil.get_terminal_size()
-    state = RenderState(theme, args, size, 0)
+    state = RenderState(theme, args, size, Section.List)
     render(state)
 
     while True:
@@ -200,9 +207,8 @@ def update_loop(bus: Queue, theme: Theme, args: Arguments) -> None:
 
 def render(state: RenderState) -> None:
     clear_screen()
-    render_title(state.size.columns, state.theme, state.args.color_mode)
-    render_borders(state.size.columns, state.size.lines,
-                   state.theme, state.args)
+    render_title(state)
+    render_borders(state)
 
 
 def parse_colors(args: Arguments) -> Theme:
@@ -211,10 +217,12 @@ def parse_colors(args: Arguments) -> Theme:
     mode = args.color_mode.value
     title_color = cp[mode]["title_color"]
     border_color = cp[mode]["border_color"]
+    active_color = cp[mode]["active_color"]
 
     return Theme(
         title_color=title_color,
-        border_color=border_color
+        border_color=border_color,
+        active_color=active_color
     )
 
 
@@ -263,19 +271,20 @@ def set_cursor(x: int, y: int) -> None:
     print(f'{CSI}{y};{x}H', end="")
 
 
-def render_title(width: int, theme: Theme, mode: ColorMode) -> None:
+def render_title(state: RenderState) -> None:
     set_cursor(1, 1)
-    offset = width - (len(TITLE) + 4)
-    set_foreground(theme.title_color, mode)
-    print(f"{offset * ' '}{TITLE}", end="")
+    offset = state.size.columns - (len(TITLE) + 4)
+    set_foreground(state.theme.title_color, state.args.color_mode)
+    print(f"{' ' * offset}{TITLE}")
     reset_style()
 
 
-def render_borders(width: int, height: int, theme: Theme,
-                   args: Arguments) -> None:
-    x_offset = math.floor(width / 4)
-    set_foreground(theme.border_color, args.color_mode)
-    if args.border_style == BorderStyle.Single:
+def render_borders(state: RenderState) -> None:
+    adj_height = state.size.lines - 3  # Account for title
+    # List width, req/resp width, req/resp height
+    lw, rw, rh = calculate_areas(state.size.columns, adj_height)
+
+    if state.args.border_style == BorderStyle.Single:
         h_border = Border.h_single
         v_border = Border.v_single
         t_border = Border.t_single
@@ -284,26 +293,60 @@ def render_borders(width: int, height: int, theme: Theme,
         v_border = Border.v_double
         t_border = Border.t_double
 
-    # Horizontal title separator
     set_cursor(1, 2)
-    print(f"{h_border * width}")
-    reset_style()
+    set_foreground(
+        state.theme.active_color if state.active == Section.List
+        else state.theme.border_color,
+        state.args.color_mode)
+    print(f"{h_border * lw}")
 
-    # Connector
-    set_cursor(x_offset, 2)
+    set_cursor(lw + 1, 2)
+    set_foreground(
+        state.theme.active_color if state.active == Section.Request
+        else state.theme.border_color,
+        state.args.color_mode
+    )
+    print(f"{h_border * rw}", end="")
+
+    set_cursor(lw, 2)
+    set_foreground(
+        state.theme.active_color if state.active == Section.List
+        or state.active == Section.Request
+        else state.theme.border_color,
+        state.args.color_mode
+    )
     print(t_border)
 
-    # Vertical request list separator
-    for index in range(height - 3):
-        set_cursor(x_offset, index + 3)
+    set_foreground(
+        state.theme.active_color if state.active == Section.Request
+        or state.active == Section.List
+        else state.theme.border_color,
+        state.args.color_mode
+    )
+    for index in range(rh):
+        set_cursor(lw, index + 3)
         print(v_border)
 
-    # Horizontal request definition
-    # and response separator
-    x_remain = width - x_offset
-    y_half = math.floor((height - 3) / 2)
-    set_cursor(x_offset + 1, y_half + 3)
-    print(f"{h_border * x_remain}")
+    set_foreground(
+        state.theme.active_color if state.active == Section.Response
+        or state.active == Section.List
+        else state.theme.border_color,
+        state.args.color_mode
+    )
+    # Compensate for potential one loss
+    comp_height = state.size.lines - rh
+    for index in range(comp_height):
+        set_cursor(lw, (index + rh))
+        print(v_border)
+
+    reset_style()
+
+
+def calculate_areas(width: int, height: int) -> (int, int, int):
+    lw = math.floor(width / 4)   # List width
+    rw = width - lw              # Request/Response width
+    rh = math.floor(height / 2)  # Request/Response rr_height
+    return (lw, rw, rh)
 
 
 if __name__ == "__main__":
