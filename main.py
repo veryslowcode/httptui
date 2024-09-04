@@ -245,7 +245,7 @@ def render(state: RenderState) -> None:
     clear_screen()
     render_title(state)
     render_borders(state)
-    render_lables(state)
+    render_labels(state)
 
 
 def parse_colors(args: Arguments) -> Theme:
@@ -353,7 +353,7 @@ def render_borders(state: RenderState) -> None:
     reset_style()
 
 
-def render_lables(state: RenderState) -> None:
+def render_labels(state: RenderState) -> None:
     x_offset = math.floor(state.size.columns / 4)
     adj_height = state.size.lines - 3  # Account for title
     middle = math.floor(adj_height / 2)
