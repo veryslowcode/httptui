@@ -9,6 +9,7 @@ import configparser
 from enum import Enum
 from queue import Queue
 from pathlib import Path
+from http_parser import HttpRequest, parse_http_file
 from dataclasses import dataclass
 
 
@@ -52,6 +53,7 @@ class BorderStyle(Enum):
 
 @dataclass
 class Arguments:
+    file: str = "requests.http"
     theme_file: str = "theme.ini"
     color_mode: ColorMode = ColorMode.Bit8
     border_style: BorderStyle = BorderStyle.Single
@@ -69,6 +71,7 @@ class RenderState:
     args:   Arguments
     size:   tuple[int, int]
     active: Section
+    requests: list[HttpRequest]
 
 
 class Message(Enum):
@@ -93,6 +96,7 @@ def parse_args() -> Arguments:
     parser.add_argument("-t", "--theme",
                         help="Path to theme file " +
                         "(defaults to 'theme.ini')")
+
     parser.add_argument("-m", "--mode",
                         help="Color style: '4bit' or '8bit' " +
                         "(defaults to '8bit')")
@@ -100,6 +104,10 @@ def parse_args() -> Arguments:
     parser.add_argument("-b", "--border",
                         help="Border style: 'single' or 'double' " +
                         "(defaults to 'single')")
+
+    parser.add_argument("-f", "--file",
+                        help="Path to requests fiel " +
+                        "(defaults to script 'requests.http')")
 
     args = Arguments()
     parsed_args = parser.parse_args()
@@ -118,6 +126,12 @@ def parse_args() -> Arguments:
     if parsed_args.border is not None:
         border = (BorderStyle)(parsed_args.border.lower())
         args.border_style = border
+
+    if parsed_args.file is not None:
+        args.file = parsed_args.file
+    else:
+        scriptdir = Path(__file__).parent
+        args.file = Path(scriptdir, "requests.http")
 
     return args
 
@@ -172,8 +186,10 @@ def _main_loop(driver: any, args: Arguments) -> None:
     hide_cursor()
     bus = Queue()
 
+    requests = parse_http_file(str(args.file))
+
     update_thread = threading.Thread(target=update_loop,
-                                     args=(bus, theme, args),
+                                     args=(bus, theme, args, requests),
                                      daemon=True)
     threads = {
         "update_thread": update_thread
@@ -200,10 +216,11 @@ def _main_loop(driver: any, args: Arguments) -> None:
     disable_buffer()
 
 
-def update_loop(bus: Queue, theme: Theme, args: Arguments) -> None:
+def update_loop(bus: Queue, theme: Theme, args: Arguments,
+                requests: list[HttpRequest]) -> None:
     # Defaults to 80 columns by 24 lines
     size = shutil.get_terminal_size()
-    state = RenderState(theme, args, size, Section.List)
+    state = RenderState(theme, args, size, Section.List, requests)
     render(state)
 
     while True:
@@ -246,6 +263,7 @@ def render(state: RenderState) -> None:
     render_title(state)
     render_borders(state)
     render_labels(state)
+    render_request_list(state)
 
 
 def parse_colors(args: Arguments) -> Theme:
@@ -384,6 +402,18 @@ def render_labels(state: RenderState) -> None:
         )
     print(" Response ")
     reset_style()
+
+
+def render_request_list(state: RenderState) -> None:
+    set_cursor(3, 3)
+    requests = state.requests
+    for i in range(len(requests)):
+        request = requests[i]
+        if request.name != "":
+            print(request.name)
+        else:
+            print(request.url)
+        set_cursor(3, 4 + i)
 
 
 if __name__ == "__main__":
