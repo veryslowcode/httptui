@@ -1,0 +1,16 @@
+@url=https://google.com
+@version=1.1
+&Google
+GET {{url}} {{version}}
+Accept: application/json
+Content-Type: application/json
+
+GET {{url}} 1.0
+
+POST {{url}} 1.1
+Content-Type: application/json
+Accept: application/json
+
+{
+    "id": 0
+}
