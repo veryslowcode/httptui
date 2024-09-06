@@ -67,10 +67,11 @@ class Section(Enum):
 
 @dataclass
 class RenderState:
-    theme:  Theme
-    args:   Arguments
-    size:   tuple[int, int]
-    active: Section
+    theme:    Theme
+    args:     Arguments
+    size:     tuple[int, int]
+    active:   Section
+    selected: int
     requests: list[HttpRequest]
 
 
@@ -220,11 +221,12 @@ def update_loop(bus: Queue, theme: Theme, args: Arguments,
                 requests: list[HttpRequest]) -> None:
     # Defaults to 80 columns by 24 lines
     size = shutil.get_terminal_size()
-    state = RenderState(theme, args, size, Section.List, requests)
-    render(state)
+    state = RenderState(theme, args, size, Section.List, 0, requests)
+    render(state, True)  # Ensure screen is initially cleared
 
     while True:
         updateflag = False
+        resizeflag = False
         if not bus.empty():
             updateflag = True
             message = bus.get()
@@ -252,14 +254,17 @@ def update_loop(bus: Queue, theme: Theme, args: Arguments,
         if new_size != state.size:
             state.size = new_size
             updateflag = True
+            resizeflag = True
 
         if updateflag:
-            render(state)
+            render(state, resizeflag)
         time.sleep(0.1)  # 100 miliseconds
 
 
-def render(state: RenderState) -> None:
-    clear_screen()
+def render(state: RenderState, resize: bool) -> None:
+    if resize:
+        clear_screen()
+
     render_title(state)
     render_borders(state)
     render_labels(state)
@@ -327,16 +332,22 @@ def set_cursor(x: int, y: int) -> None:
 
 
 def render_title(state: RenderState) -> None:
-    set_cursor(1, 1)
-    offset = state.size.columns - (len(TITLE) + 4)
+    x_offset = 1
+    y_offset = 1
+    padding = 4
+
+    set_cursor(x_offset, y_offset)
+    offset = state.size.columns - (len(TITLE) + padding)
     set_foreground(state.theme.title_color, state.args.color_mode)
     print(f"{' ' * offset}{TITLE}")
     reset_style()
 
 
 def render_borders(state: RenderState) -> None:
-    adj_height = state.size.lines - 3  # Account for title
     x_offset = math.floor(state.size.columns / 4)
+    y_offset = 3   # Account for title
+    x_padding = 1  # From the left edge
+    adj_height = state.size.lines - y_offset
 
     if state.args.border_style == BorderStyle.Single:
         h_border = Border.h_single
@@ -350,14 +361,15 @@ def render_borders(state: RenderState) -> None:
         c_border = Border.c_double
 
     set_foreground(state.theme.border_color, state.args.color_mode)
-    set_cursor(1, 2)
+    set_cursor(x_padding, y_offset - 1)
+
     print(f"{h_border * state.size.columns}")
 
     for index in range(adj_height + 1):
-        set_cursor(x_offset, index + 3)
+        set_cursor(x_offset, index + y_offset)
         print(v_border, end="")
 
-    set_cursor(x_offset, 2)
+    set_cursor(x_offset, y_offset - 1)
     print(t_border)
 
     middle = math.floor(adj_height / 2)
@@ -373,10 +385,12 @@ def render_borders(state: RenderState) -> None:
 
 def render_labels(state: RenderState) -> None:
     x_offset = math.floor(state.size.columns / 4)
-    adj_height = state.size.lines - 3  # Account for title
+    y_offset = 3   # Account for title
+    x_padding = 2  # From relative left edge
+    adj_height = state.size.lines - y_offset
     middle = math.floor(adj_height / 2)
 
-    set_cursor(2, 2)
+    set_cursor(x_padding, y_offset - 1)
     if state.active == Section.List:
         set_foreground(
             state.theme.active_color,
@@ -385,7 +399,7 @@ def render_labels(state: RenderState) -> None:
     print(" List ")
     reset_style()
 
-    set_cursor(x_offset + 2, 2)
+    set_cursor(x_offset + x_padding, y_offset - 1)
     if state.active == Section.Request:
         set_foreground(
             state.theme.active_color,
@@ -394,7 +408,7 @@ def render_labels(state: RenderState) -> None:
     print(" Request ")
     reset_style()
 
-    set_cursor(x_offset + 2, middle)
+    set_cursor(x_offset + x_padding, middle)
     if state.active == Section.Response:
         set_foreground(
             state.theme.active_color,
@@ -405,15 +419,20 @@ def render_labels(state: RenderState) -> None:
 
 
 def render_request_list(state: RenderState) -> None:
-    set_cursor(3, 3)
+    max_w = math.floor(state.size.columns / 4) - 1
     requests = state.requests
+    x_offset = 2
+    y_offset = 3
+
+    set_cursor(x_offset, y_offset)
     for i in range(len(requests)):
         request = requests[i]
-        if request.name != "":
-            print(request.name)
-        else:
-            print(request.url)
-        set_cursor(3, 4 + i)
+        name = request.name if request.name != "" else request.url
+        if len(name) > max_w:
+            name = name[:max_w - 2]  # Length of ..
+            name = name + ".."
+        print(name)
+        set_cursor(x_offset, (y_offset + i) + 1)
 
 
 if __name__ == "__main__":
