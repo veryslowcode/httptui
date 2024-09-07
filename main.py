@@ -215,6 +215,8 @@ def _main_loop(driver: any, args: Arguments) -> None:
     bus = Queue()
 
     requests = parse_http_file(str(args.file))
+    for i in range(3):
+        requests += requests
 
     update_thread = threading.Thread(target=update_loop,
                                      args=(bus, theme, args, requests),
@@ -300,14 +302,12 @@ def update_loop(bus: Queue, theme: Theme, args: Arguments,
                     if state.active == Section.List:
                         state.selected = update_selected(state, False)
                         state.definition = populate_request_definition(state)
-                    else:
-                        state = update_scroll(state, False)
+                    state = update_scroll(state, False)
                 case Message.MoveDown:
                     if state.active == Section.List:
                         state.selected = update_selected(state, True)
                         state.definition = populate_request_definition(state)
-                    else:
-                        state = update_scroll(state, True)
+                    state = update_scroll(state, True)
                 case Message.MoveLeft:
                     state.active = update_active(state, False)
                 case Message.MoveRight:
@@ -345,13 +345,11 @@ def update_selected(state: RenderState, increase: bool) -> int:
     current = state.selected
 
     if increase:
-        current += 1
-        if current >= len(state.requests):
-            current = 0
+        if current < len(state.requests) - 1:
+            current += 1
     else:
-        current -= 1
-        if current < 0:
-            current = len(state.requests) - 1
+        if current > 0:
+            current -= 1
 
     return current
 
@@ -359,12 +357,13 @@ def update_selected(state: RenderState, increase: bool) -> int:
 def update_scroll(state: RenderState, increase: bool) -> RenderState:
     match state.active:
         case Section.List:
-            # TODO implement
-            pass
+            state.scroll.request = 0
+            state.scroll.response = 0
+            updated = update_scroll_list(state, increase)
+            state.scroll.rlist = updated
         case Section.Request:
             updated = update_scroll_request(state, increase)
             state.scroll.request = updated
-            return state
         case Section.Response:
             # TODO implement
             pass
@@ -372,11 +371,38 @@ def update_scroll(state: RenderState, increase: bool) -> RenderState:
     return state
 
 
+def update_scroll_list(state: RenderState, increase: bool) -> int:
+    """
+    Calculates the scroll offset of the List section,
+    increasing/decresing only if the amount of requests
+    is greater than the section height.
+
+    Returns an integer representing the request section
+    scroll offset.
+    """
+    y_offset = 3   # Account for title
+    adj_height = state.size.lines - y_offset
+
+    if len(state.requests) < adj_height:
+        return
+
+    scroll = state.scroll.rlist
+    if increase:
+        if scroll < (len(state.requests) - adj_height) \
+                and state.selected >= adj_height:
+            scroll += 1
+    else:
+        if scroll > 0 and state.selected - scroll <= 0:
+            scroll -= 1
+
+    return scroll
+
+
 def update_scroll_request(state: RenderState, increase: bool) -> int:
     """
     Calculates the scroll offset of the Request section,
     increasing/decresing only if the request definition
-    is greater than section height.
+    is greater than the section height.
 
     Returns an integer representing the request section
     scroll offset.
@@ -396,9 +422,8 @@ def update_scroll_request(state: RenderState, increase: bool) -> int:
     if increase:
         if scroll <= (cap - max_height):
             scroll += 1
-    else:
-        if scroll > 0:
-            scroll -= 1
+    elif scroll > 0:
+        scroll -= 1
 
     return scroll
 
@@ -432,11 +457,12 @@ def render(state: RenderState, resize: bool) -> None:
     if resize:
         clear_screen()
 
-    render_title(state)
-    render_borders(state)
-    render_labels(state)
     render_request_list(state)
     render_request_definition(state)
+    render_borders(state)
+    render_labels(state)
+    render_title(state)
+    # _render_debug(state)
 
 
 def render_title(state: RenderState) -> None:
@@ -546,15 +572,27 @@ def render_labels(state: RenderState) -> None:
 def render_request_list(state: RenderState) -> None:
     max_w = math.floor(state.size.columns / 4) - 1
     requests = state.requests
+    scroll = state.scroll.rlist
     x_offset = 2
     y_offset = 3
+    adj_height = state.size.lines - y_offset
+
+    for index in range(adj_height):
+        set_cursor(x_offset, y_offset + index)
+        clear_line_from_cursor()
+
+    offset = 0
+    cap = len(requests)
+    if len(requests) >= adj_height:
+        cap = adj_height
+        offset = scroll
 
     set_cursor(x_offset, y_offset)
-    for i in range(len(requests)):
-        if state.active == Section.List and state.selected == i:
+    for i in range(cap):
+        if state.active == Section.List and state.selected == i + offset:
             set_foreground(state.theme.selected_color, state.args.color_mode)
 
-        request = requests[i]
+        request = requests[i + offset]
         name = request.name if request.name != "" else request.url
         if len(name) > max_w:
             name = name[:max_w - 2]  # Length of ..
@@ -650,6 +688,27 @@ def set_cursor(x: int, y: int) -> None:
     are based on character size.
     """
     print(f'{CSI}{y};{x}H', end="")
+
+
+def _render_debug(state: RenderState) -> None:
+    debug = \
+        f"wid {state.size.columns} hgt {state.size.lines} | " + \
+        f"act {state.active.value} | sel {state.selected} | " + \
+        f"lislen {len(state.requests)} | " +                    \
+        f"scr {state.scroll.rlist} {state.scroll.request} " +   \
+        f"{state.scroll.response} | " +                         \
+        f"deflen {len(state.definition)}"
+
+    pos_y = state.size.lines - 1
+    pos_x = state.size.columns - len(debug) - 2
+
+    set_cursor(pos_x, pos_y)
+    clear_line_from_cursor()
+
+    set_cursor(pos_x, pos_y)
+    set_foreground(93, state.args.color_mode)
+    print(debug)
+    reset_style()
 
 
 if __name__ == "__main__":
