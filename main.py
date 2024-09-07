@@ -23,8 +23,11 @@ DIS_ALT_BUF = "?1049l"  # Disable Alternate Buffer
 
 
 class ColorMode(Enum):
-    Bit4 = "4bit"
-    Bit8 = "8bit"
+    """
+    Indicates the structure of the escape equence
+    """
+    Bit4 = "4bit"       # Color immediately after CSI
+    Bit8 = "8bit"       # Sequence is as follows: 35:5:{color}
 
 
 @dataclass
@@ -67,6 +70,13 @@ class Section(Enum):
 
 
 @dataclass
+class ScrollState:
+    rlist:    int
+    request:  int
+    response: int
+
+
+@dataclass
 class RenderState:
     theme:    Theme
     args:     Arguments
@@ -74,6 +84,7 @@ class RenderState:
     active:   Section
     selected: int
     requests: list[HttpRequest]
+    scroll:   ScrollState
 
 
 class Message(Enum):
@@ -84,6 +95,10 @@ class Message(Enum):
 
 
 def main() -> None:
+    """
+    Main wraps the platform
+    specific implementation
+    """
     args = parse_args()
     if sys.platform == "win32":
         _win_main(args)
@@ -108,7 +123,7 @@ def parse_args() -> Arguments:
                         "(defaults to 'single')")
 
     parser.add_argument("-f", "--file",
-                        help="Path to requests fiel " +
+                        help="Path to requests file " +
                         "(defaults to script 'requests.http')")
 
     args = Arguments()
@@ -145,7 +160,9 @@ def _win_main(args: Arguments) -> None:
     ostate, istate = driver.initialize()
 
     def signal_trap(sig, frame) -> None:
-        '''Ensures terminal state is restored'''
+        """
+        Ensures terminal state is restored
+        """
         disable_buffer()
         driver.reset(ostate, istate)
         sys.exit(0)
@@ -167,7 +184,9 @@ def _nix_main(args: Arguments) -> None:
     orig_state = driver.initialize()
 
     def signal_trap(sig, frame) -> None:
-        '''Ensures terminal state is restored'''
+        """
+        Ensures terminal state is restored
+        """
         disable_buffer()
         driver.reset(orig_state)
         sys.exit(0)
@@ -183,6 +202,12 @@ def _nix_main(args: Arguments) -> None:
 
 
 def _main_loop(driver: any, args: Arguments) -> None:
+    """
+    Orchestrates all threads of the application.
+    Does so by spawning the messages appropriate
+    message based on keyboard input and triggering
+    the update or request thread.
+    """
     theme = parse_colors(args)
     enable_buffer()
     hide_cursor()
@@ -237,9 +262,15 @@ def parse_colors(args: Arguments) -> Theme:
 
 def update_loop(bus: Queue, theme: Theme, args: Arguments,
                 requests: list[HttpRequest]) -> None:
+    """
+    Processes messages produced by the update thread,
+    updating render state and triggering a rerender.
+    """
     # Defaults to 80 columns by 24 lines
     size = shutil.get_terminal_size()
-    state = RenderState(theme, args, size, Section.List, 0, requests)
+    scroll_state = ScrollState(0, 0, 0)
+    state = RenderState(theme, args, size, Section.List,
+                        0, requests, scroll_state)
     render(state, True)  # Ensure screen is initially cleared
 
     while True:
@@ -268,6 +299,8 @@ def update_loop(bus: Queue, theme: Theme, args: Arguments,
 
         new_size = shutil.get_terminal_size()
         if new_size != state.size:
+            # Resize is handled differently
+            # with render to avoid flickering
             state.size = new_size
             updateflag = True
             resizeflag = True
@@ -278,6 +311,9 @@ def update_loop(bus: Queue, theme: Theme, args: Arguments,
 
 
 def update_active(state: RenderState, increase: bool) -> Section:
+    """
+    Updates the active section
+    """
     current = state.active.value
 
     if increase:
@@ -294,6 +330,10 @@ def update_active(state: RenderState, increase: bool) -> Section:
 
 
 def update_selected(state: RenderState, increase: bool) -> int:
+    """
+    Updates the selected request.
+    Should only be used when active section is List.
+    """
     current = state.selected
 
     if increase:
@@ -319,6 +359,9 @@ def render(state: RenderState, resize: bool) -> None:
 
 
 def render_title(state: RenderState) -> None:
+    """
+    Renders on the right-hand side of the screen
+    """
     x_offset = 1
     y_offset = 1
     padding = 4
@@ -331,6 +374,15 @@ def render_title(state: RenderState) -> None:
 
 
 def render_borders(state: RenderState) -> None:
+    """
+    Renders box drawing characters to partition
+    sections of the interface, as depicted below:
+    Single Border             Double Border
+    ─────┬────────────        ═════╦════════════
+         │                         ║
+         ├────────────             ╠════════════
+         │                         ║
+    """
     x_offset = math.floor(state.size.columns / 4)
     y_offset = 3   # Account for title
     x_padding = 1  # From the left edge
@@ -371,6 +423,11 @@ def render_borders(state: RenderState) -> None:
 
 
 def render_labels(state: RenderState) -> None:
+    """
+    Renders the labels associated with the sections:
+    List, Request, and Response. Also colors the
+    'active' one.
+    """
     x_offset = math.floor(state.size.columns / 4)
     y_offset = 3   # Account for title
     x_padding = 2  # From relative left edge
@@ -428,13 +485,17 @@ def render_request_list(state: RenderState) -> None:
 
 
 def enable_buffer() -> None:
-    '''Creates a new screen buffer'''
+    """
+    Creates a new screen buffer
+    """
     print(f"{CSI}{EN_ALT_BUF}")
 
 
 def disable_buffer() -> None:
-    '''Reverts screen back to
-    previous state before script'''
+    """
+    Reverts screen back to
+    previous state before script
+    """
     print(f"{CSI}{DIS_ALT_BUF}")
 
 
@@ -460,7 +521,7 @@ def reset_style() -> None:
 
 
 def set_cursor(x: int, y: int) -> None:
-    '''
+    """
     Escape sequence to move the
     cursor with the assumption that
     location (1,1) is at the top
@@ -468,7 +529,7 @@ def set_cursor(x: int, y: int) -> None:
 
     It also assumes that {x} and {y}
     are based on character size.
-    '''
+    """
     print(f'{CSI}{y};{x}H', end="")
 
 
