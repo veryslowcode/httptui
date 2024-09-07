@@ -57,6 +57,7 @@ class BorderStyle(Enum):
 
 @dataclass
 class Arguments:
+    debug: bool = False
     file: str = "requests.http"
     theme_file: str = "theme.ini"
     color_mode: ColorMode = ColorMode.Bit8
@@ -127,6 +128,9 @@ def parse_args() -> Arguments:
                         help="Path to requests file " +
                         "(defaults to script 'requests.http')")
 
+    parser.add_argument("-g", "--debug", action="store_true",
+                        help=argparse.SUPPRESS)
+
     args = Arguments()
     parsed_args = parser.parse_args()
 
@@ -150,6 +154,8 @@ def parse_args() -> Arguments:
     else:
         scriptdir = Path(__file__).parent
         args.file = Path(scriptdir, "requests.http")
+
+    args.debug = parsed_args.debug
 
     return args
 
@@ -215,8 +221,6 @@ def _main_loop(driver: any, args: Arguments) -> None:
     bus = Queue()
 
     requests = parse_http_file(str(args.file))
-    for i in range(3):
-        requests += requests
 
     update_thread = threading.Thread(target=update_loop,
                                      args=(bus, theme, args, requests),
@@ -462,7 +466,9 @@ def render(state: RenderState, resize: bool) -> None:
     render_borders(state)
     render_labels(state)
     render_title(state)
-    # _render_debug(state)
+
+    if state.args.debug:
+        _render_debug(state)
 
 
 def render_title(state: RenderState) -> None:
@@ -472,6 +478,9 @@ def render_title(state: RenderState) -> None:
     x_offset = 1
     y_offset = 1
     padding = 4
+
+    set_cursor(x_offset, y_offset)
+    clear_line_from_cursor()
 
     set_cursor(x_offset, y_offset)
     offset = state.size.columns - (len(TITLE) + padding)
@@ -706,9 +715,7 @@ def _render_debug(state: RenderState) -> None:
     clear_line_from_cursor()
 
     set_cursor(pos_x, pos_y)
-    set_foreground(93, state.args.color_mode)
     print(debug)
-    reset_style()
 
 
 if __name__ == "__main__":
