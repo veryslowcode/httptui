@@ -356,6 +356,7 @@ def render(state: RenderState, resize: bool) -> None:
     render_borders(state)
     render_labels(state)
     render_request_list(state)
+    render_request_definition(state)
 
 
 def render_title(state: RenderState) -> None:
@@ -482,6 +483,53 @@ def render_request_list(state: RenderState) -> None:
 
         reset_style()
         set_cursor(x_offset, (y_offset + i) + 1)
+
+
+def render_request_definition(state: RenderState) -> None:
+    x_offset = math.floor(state.size.columns / 4)
+    y_offset = 3   # Account for title
+    x_padding = 2  # From relative left edge
+    x_offset += x_padding
+
+    request = state.requests[state.selected]
+
+    set_cursor(x_offset, y_offset)
+    y_offset = render_incrementing_y(
+        x_offset, y_offset,
+        f"Method -> {request.method.value}")
+
+    y_offset = render_incrementing_y(
+        x_offset, y_offset,
+        f"URL -> {request.url}")
+
+    y_offset = render_incrementing_y(
+        x_offset, y_offset,
+        f"Encrypted -> {request.encrypted}")
+    y_offset += 1  # Additional separation between metadata and headers
+
+    if request.headers:
+        y_offset = render_incrementing_y(
+            x_offset, y_offset,
+            "Headers:")
+        for key, value in request.headers.items():
+            y_offset = render_incrementing_y(
+                x_offset, y_offset,
+                f"{key}: {value}")
+        y_offset += 1  # Additional separation between headers and body
+
+    if request.body is not None:
+        y_offset = render_incrementing_y(
+            x_offset, y_offset,
+            "Body:")
+        y_offset = render_incrementing_y(
+            x_offset, y_offset,
+            request.body)
+
+
+def render_incrementing_y(x_offset: int, y_offset: int, output: str) -> int:
+    set_cursor(x_offset, y_offset)
+    print(output)
+    return y_offset + 1
 
 
 def enable_buffer() -> None:
