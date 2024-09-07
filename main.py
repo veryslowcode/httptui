@@ -90,6 +90,7 @@ class RenderState:
     selected: int
     requests: list[HttpRequest]
     scroll:   ScrollState
+    rerender: list[bool]
     definition: list[str]
 
 
@@ -283,7 +284,8 @@ def update_loop(bus: Queue, theme: Theme, args: Arguments,
     definition = []
 
     state = RenderState(theme, args, size, Section.List,
-                        0, requests, scroll_state, definition)
+                        0, requests, scroll_state,
+                        [False, False, False], definition)
     if len(requests) > 0:
         state.definition = populate_request_definition(state)
 
@@ -303,6 +305,7 @@ def update_loop(bus: Queue, theme: Theme, args: Arguments,
             resizeflag = True
 
         elif not bus.empty():
+            state.rerender = [False] * 3
             updateflag = True
             message = bus.get()
             match message:
@@ -368,10 +371,15 @@ def update_scroll(state: RenderState, increase: bool) -> RenderState:
             state.scroll.request = 0
             state.scroll.response = 0
             updated = update_scroll_list(state, increase)
-            state.scroll.rlist = updated
+            state.rerender = [False, True, True]
+            if state.scroll.rlist != updated:
+                state.rerender = [True] * 3
+                state.scroll.rlist = updated
         case Section.Request:
             updated = update_scroll_request(state, increase)
-            state.scroll.request = updated
+            if state.scroll.request != updated:
+                state.rerender[1] = True
+                state.scroll.request = updated
         case Section.Response:
             # TODO implement
             pass
@@ -481,7 +489,7 @@ def render_title(state: RenderState) -> None:
     padding = 4
 
     set_cursor(x_offset, y_offset)
-    clear_line_from_cursor()
+    print(" " * state.size.columns)
 
     set_cursor(x_offset, y_offset)
     offset = state.size.columns - (len(TITLE) + padding)
@@ -582,9 +590,10 @@ def render_request_list(state: RenderState) -> None:
     scroll = state.scroll.rlist
     adj_height = state.size.lines - Y_OFFSET
 
-    for index in range(adj_height):
-        set_cursor(X_OFFSET, Y_OFFSET + index)
-        clear_line_from_cursor()
+    if state.rerender[0]:
+        for index in range(adj_height):
+            set_cursor(X_OFFSET, Y_OFFSET + index)
+            clear_line_from_cursor()
 
     offset = 0
     cap = len(requests)
@@ -616,9 +625,10 @@ def render_request_definition(state: RenderState) -> None:
     max_height = (middle - 1) - y_offset
     max_width = state.size.columns - x_offset
 
-    for index in range((middle - 1) - y_offset):
-        set_cursor(x_offset, y_offset + index)
-        clear_line_from_cursor()
+    if state.rerender[1]:
+        for index in range((middle - 1) - y_offset):
+            set_cursor(x_offset, y_offset + index)
+            clear_line_from_cursor()
 
     definition = state.definition
     scroll = state.scroll.request
@@ -715,7 +725,7 @@ def _render_debug(state: RenderState) -> None:
     pos_y = state.size.lines - 1
     pos_x = state.size.columns - len(debug) - 2
 
-    set_cursor(pos_x, pos_y)
+    set_cursor(pos_x - 5, pos_y)
     clear_line_from_cursor()
 
     set_cursor(pos_x, pos_y)
