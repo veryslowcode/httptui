@@ -21,6 +21,10 @@ CSI = f"{ESC}["         # Control Sequence Introducer
 EN_ALT_BUF = "?1049h"   # Enable Alternate Buffer
 DIS_ALT_BUF = "?1049l"  # Disable Alternate Buffer
 
+X_OFFSET = 2            # From left edge
+X_PADDING = 2           # From relative left edge
+Y_OFFSET = 3            # Accounts for title row and separator row
+
 
 class ColorMode(Enum):
     """
@@ -384,8 +388,7 @@ def update_scroll_list(state: RenderState, increase: bool) -> int:
     Returns an integer representing the request section
     scroll offset.
     """
-    y_offset = 3   # Account for title
-    adj_height = state.size.lines - y_offset
+    adj_height = state.size.lines - Y_OFFSET
 
     if len(state.requests) < adj_height:
         return
@@ -411,12 +414,10 @@ def update_scroll_request(state: RenderState, increase: bool) -> int:
     Returns an integer representing the request section
     scroll offset.
     """
-    y_offset = 3   # Account for title
-
-    adj_height = state.size.lines - y_offset
+    adj_height = state.size.lines - Y_OFFSET
     middle = math.floor(adj_height / 2)
 
-    max_height = (middle - 1) - y_offset
+    max_height = (middle - 1) - Y_OFFSET
     scroll = state.scroll.request
     cap = len(state.definition) - 1
 
@@ -500,9 +501,8 @@ def render_borders(state: RenderState) -> None:
          │                         ║
     """
     x_offset = math.floor(state.size.columns / 4)
-    y_offset = 3   # Account for title
     x_padding = 1  # From the left edge
-    adj_height = state.size.lines - y_offset
+    adj_height = state.size.lines - Y_OFFSET
 
     if state.args.border_style == BorderStyle.Single:
         h_border = Border.h_single
@@ -516,15 +516,15 @@ def render_borders(state: RenderState) -> None:
         c_border = Border.c_double
 
     set_foreground(state.theme.border_color, state.args.color_mode)
-    set_cursor(x_padding, y_offset - 1)
+    set_cursor(x_padding, Y_OFFSET - 1)
 
     print(f"{h_border * state.size.columns}")
 
     for index in range(adj_height + 1):
-        set_cursor(x_offset, index + y_offset)
+        set_cursor(x_offset, index + Y_OFFSET)
         print(v_border, end="")
 
-    set_cursor(x_offset, y_offset - 1)
+    set_cursor(x_offset, Y_OFFSET - 1)
     print(t_border)
 
     middle = math.floor(adj_height / 2)
@@ -545,12 +545,10 @@ def render_labels(state: RenderState) -> None:
     'active' one.
     """
     x_offset = math.floor(state.size.columns / 4)
-    y_offset = 3   # Account for title
-    x_padding = 2  # From relative left edge
-    adj_height = state.size.lines - y_offset
+    adj_height = state.size.lines - Y_OFFSET
     middle = math.floor(adj_height / 2)
 
-    set_cursor(x_padding, y_offset - 1)
+    set_cursor(X_PADDING, Y_OFFSET - 1)
     if state.active == Section.List:
         set_foreground(
             state.theme.active_color,
@@ -559,7 +557,7 @@ def render_labels(state: RenderState) -> None:
     print(" List ")
     reset_style()
 
-    set_cursor(x_offset + x_padding, y_offset - 1)
+    set_cursor(x_offset + X_PADDING, Y_OFFSET - 1)
     if state.active == Section.Request:
         set_foreground(
             state.theme.active_color,
@@ -568,7 +566,7 @@ def render_labels(state: RenderState) -> None:
     print(" Request ")
     reset_style()
 
-    set_cursor(x_offset + x_padding, middle)
+    set_cursor(x_offset + X_PADDING, middle)
     if state.active == Section.Response:
         set_foreground(
             state.theme.active_color,
@@ -582,12 +580,10 @@ def render_request_list(state: RenderState) -> None:
     max_w = math.floor(state.size.columns / 4) - 1
     requests = state.requests
     scroll = state.scroll.rlist
-    x_offset = 2
-    y_offset = 3
-    adj_height = state.size.lines - y_offset
+    adj_height = state.size.lines - Y_OFFSET
 
     for index in range(adj_height):
-        set_cursor(x_offset, y_offset + index)
+        set_cursor(X_OFFSET, Y_OFFSET + index)
         clear_line_from_cursor()
 
     offset = 0
@@ -596,30 +592,29 @@ def render_request_list(state: RenderState) -> None:
         cap = adj_height
         offset = scroll
 
-    set_cursor(x_offset, y_offset)
+    set_cursor(X_OFFSET, Y_OFFSET)
     for i in range(cap):
         if state.active == Section.List and state.selected == i + offset:
             set_foreground(state.theme.selected_color, state.args.color_mode)
 
         request = requests[i + offset]
         name = request.name if request.name != "" else request.url
-        if len(name) > max_w:
-            name = name[:max_w - 2]  # Length of ..
-            name = name + ".."
+        name = cap_line_width(max_w, name)
         print(name)
 
         reset_style()
-        set_cursor(x_offset, (y_offset + i) + 1)
+        set_cursor(X_OFFSET, (Y_OFFSET + i) + 1)
 
 
 def render_request_definition(state: RenderState) -> None:
     x_offset = math.floor(state.size.columns / 4)
     y_offset = 3   # Account for title
-    x_padding = 2  # From relative left edge
-    x_offset += x_padding
+    x_offset += X_PADDING
+
     adj_height = state.size.lines - y_offset
     middle = math.floor(adj_height / 2)
     max_height = (middle - 1) - y_offset
+    max_width = state.size.columns - x_offset
 
     for index in range((middle - 1) - y_offset):
         set_cursor(x_offset, y_offset + index)
@@ -631,11 +626,12 @@ def render_request_definition(state: RenderState) -> None:
     if len(definition) >= max_height:
         for row in range(max_height):
             set_cursor(x_offset, y_offset)
-            y_offset = render_incrementing_y(
-                    x_offset, y_offset, definition[row + scroll])
+            line = cap_line_width(max_width, definition[row + scroll])
+            y_offset = render_incrementing_y(x_offset, y_offset, line)
     else:
         set_cursor(x_offset, y_offset)
         for line in state.definition:
+            line = cap_line_width(max_width, line)
             y_offset = render_incrementing_y(
                     x_offset, y_offset, line)
 
@@ -644,6 +640,14 @@ def render_incrementing_y(x_offset: int, y_offset: int, output: str) -> int:
     set_cursor(x_offset, y_offset)
     print(output)
     return y_offset + 1
+
+
+def cap_line_width(max_w: int, line: str) -> str:
+    if len(str(line)) > max_w:
+        capped = str(line)[:max_w - 2]  # Length of ..
+        capped = capped + ".."
+        line = capped
+    return line
 
 
 def enable_buffer() -> None:
