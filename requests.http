@@ -12,5 +12,19 @@ Content-Type: application/json
 Accept: application/json
 
 {
-    "id": 0
+    "id": 0,
+    "name": "Example",
+    "email": "someone@gmail.com"
+}
+
+PATCH {{url}} 1.1
+Content-Language: en
+Content-Type: application/json
+Accept: application/json
+Accept-Language: en
+Accept-Patch: application/merge-patch+json
+
+{
+    "id": 0,
+    "email": "some.one@gmail.com"
 }

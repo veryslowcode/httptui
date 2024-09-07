@@ -282,7 +282,17 @@ def update_loop(bus: Queue, theme: Theme, args: Arguments,
     while True:
         updateflag = False
         resizeflag = False
-        if not bus.empty():
+
+        new_size = shutil.get_terminal_size()
+        if new_size != state.size:
+            # Resize is handled differently
+            # with render to avoid flickering
+            state.scroll = ScrollState(0, 0, 0)
+            state.size = new_size
+            updateflag = True
+            resizeflag = True
+
+        elif not bus.empty():
             updateflag = True
             message = bus.get()
             match message:
@@ -291,27 +301,17 @@ def update_loop(bus: Queue, theme: Theme, args: Arguments,
                         state.selected = update_selected(state, False)
                         state.definition = populate_request_definition(state)
                     else:
-                        # TODO implement scroll
-                        pass
+                        state = update_scroll(state, False)
                 case Message.MoveDown:
                     if state.active == Section.List:
                         state.selected = update_selected(state, True)
                         state.definition = populate_request_definition(state)
                     else:
-                        # TODO implement scroll
-                        pass
+                        state = update_scroll(state, True)
                 case Message.MoveLeft:
                     state.active = update_active(state, False)
                 case Message.MoveRight:
                     state.active = update_active(state, True)
-
-        new_size = shutil.get_terminal_size()
-        if new_size != state.size:
-            # Resize is handled differently
-            # with render to avoid flickering
-            state.size = new_size
-            updateflag = True
-            resizeflag = True
 
         if updateflag:
             render(state, resizeflag)
@@ -320,7 +320,7 @@ def update_loop(bus: Queue, theme: Theme, args: Arguments,
 
 def update_active(state: RenderState, increase: bool) -> Section:
     """
-    Updates the active section
+    Updates the active section, returning new Section.
     """
     current = state.active.value
 
@@ -339,7 +339,7 @@ def update_active(state: RenderState, increase: bool) -> Section:
 
 def update_selected(state: RenderState, increase: bool) -> int:
     """
-    Updates the selected request.
+    Updates the selected request, returning index.
     Should only be used when active section is List.
     """
     current = state.selected
@@ -354,6 +354,53 @@ def update_selected(state: RenderState, increase: bool) -> int:
             current = len(state.requests) - 1
 
     return current
+
+
+def update_scroll(state: RenderState, increase: bool) -> RenderState:
+    match state.active:
+        case Section.List:
+            # TODO implement
+            pass
+        case Section.Request:
+            updated = update_scroll_request(state, increase)
+            state.scroll.request = updated
+            return state
+        case Section.Response:
+            # TODO implement
+            pass
+
+    return state
+
+
+def update_scroll_request(state: RenderState, increase: bool) -> int:
+    """
+    Calculates the scroll offset of the Request section,
+    increasing/decresing only if the request definition
+    is greater than section height.
+
+    Returns an integer representing the request section
+    scroll offset.
+    """
+    y_offset = 3   # Account for title
+
+    adj_height = state.size.lines - y_offset
+    middle = math.floor(adj_height / 2)
+
+    max_height = (middle - 1) - y_offset
+    scroll = state.scroll.request
+    cap = len(state.definition) - 1
+
+    if cap < max_height:
+        return scroll
+
+    if increase:
+        if scroll <= (cap - max_height):
+            scroll += 1
+    else:
+        if scroll > 0:
+            scroll -= 1
+
+    return scroll
 
 
 def populate_request_definition(state: RenderState) -> list[str]:
@@ -524,16 +571,26 @@ def render_request_definition(state: RenderState) -> None:
     x_padding = 2  # From relative left edge
     x_offset += x_padding
     adj_height = state.size.lines - y_offset
-
     middle = math.floor(adj_height / 2)
+    max_height = (middle - 1) - y_offset
+
     for index in range((middle - 1) - y_offset):
         set_cursor(x_offset, y_offset + index)
         clear_line_from_cursor()
 
-    set_cursor(x_offset, y_offset)
-    for line in state.definition:
-        y_offset = render_incrementing_y(
-                x_offset, y_offset, line)
+    definition = state.definition
+    scroll = state.scroll.request
+
+    if len(definition) >= max_height:
+        for row in range(max_height):
+            set_cursor(x_offset, y_offset)
+            y_offset = render_incrementing_y(
+                    x_offset, y_offset, definition[row + scroll])
+    else:
+        set_cursor(x_offset, y_offset)
+        for line in state.definition:
+            y_offset = render_incrementing_y(
+                    x_offset, y_offset, line)
 
 
 def render_incrementing_y(x_offset: int, y_offset: int, output: str) -> int:
