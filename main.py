@@ -85,6 +85,7 @@ class RenderState:
     selected: int
     requests: list[HttpRequest]
     scroll:   ScrollState
+    definition: list[str]
 
 
 class Message(Enum):
@@ -269,8 +270,13 @@ def update_loop(bus: Queue, theme: Theme, args: Arguments,
     # Defaults to 80 columns by 24 lines
     size = shutil.get_terminal_size()
     scroll_state = ScrollState(0, 0, 0)
+    definition = []
+
     state = RenderState(theme, args, size, Section.List,
-                        0, requests, scroll_state)
+                        0, requests, scroll_state, definition)
+    if len(requests) > 0:
+        state.definition = populate_request_definition(state)
+
     render(state, True)  # Ensure screen is initially cleared
 
     while True:
@@ -283,12 +289,14 @@ def update_loop(bus: Queue, theme: Theme, args: Arguments,
                 case Message.MoveUp:
                     if state.active == Section.List:
                         state.selected = update_selected(state, False)
+                        state.definition = populate_request_definition(state)
                     else:
                         # TODO implement scroll
                         pass
                 case Message.MoveDown:
                     if state.active == Section.List:
                         state.selected = update_selected(state, True)
+                        state.definition = populate_request_definition(state)
                     else:
                         # TODO implement scroll
                         pass
@@ -346,6 +354,31 @@ def update_selected(state: RenderState, increase: bool) -> int:
             current = len(state.requests) - 1
 
     return current
+
+
+def populate_request_definition(state: RenderState) -> list[str]:
+    """
+    Pre-populate the renderable lines of the selected request
+    definition to allow for easy scroll functionality.
+    """
+    lines = []
+    request = state.requests[state.selected]
+    lines.append(f"Method -> {request.method.value}")
+    lines.append(f"URL -> {request.url}")
+    lines.append(f"Encrypted -> {request.encrypted}")
+    lines.append("")  # Additional after metadata
+
+    if request.headers:
+        lines.append("Headers:")
+        for key, value in request.headers.items():
+            lines.append(f"{key}: {value}")
+        lines.append("")  # Additional separation after headers
+
+    if request.body is not None:
+        lines.append("Body:")
+        lines.append(request.body)
+
+    return lines
 
 
 def render(state: RenderState, resize: bool) -> None:
@@ -490,40 +523,17 @@ def render_request_definition(state: RenderState) -> None:
     y_offset = 3   # Account for title
     x_padding = 2  # From relative left edge
     x_offset += x_padding
+    adj_height = state.size.lines - y_offset
 
-    request = state.requests[state.selected]
+    middle = math.floor(adj_height / 2)
+    for index in range((middle - 1) - y_offset):
+        set_cursor(x_offset, y_offset + index)
+        clear_line_from_cursor()
 
     set_cursor(x_offset, y_offset)
-    y_offset = render_incrementing_y(
-        x_offset, y_offset,
-        f"Method -> {request.method.value}")
-
-    y_offset = render_incrementing_y(
-        x_offset, y_offset,
-        f"URL -> {request.url}")
-
-    y_offset = render_incrementing_y(
-        x_offset, y_offset,
-        f"Encrypted -> {request.encrypted}")
-    y_offset += 1  # Additional separation between metadata and headers
-
-    if request.headers:
+    for line in state.definition:
         y_offset = render_incrementing_y(
-            x_offset, y_offset,
-            "Headers:")
-        for key, value in request.headers.items():
-            y_offset = render_incrementing_y(
-                x_offset, y_offset,
-                f"{key}: {value}")
-        y_offset += 1  # Additional separation between headers and body
-
-    if request.body is not None:
-        y_offset = render_incrementing_y(
-            x_offset, y_offset,
-            "Body:")
-        y_offset = render_incrementing_y(
-            x_offset, y_offset,
-            request.body)
+                x_offset, y_offset, line)
 
 
 def render_incrementing_y(x_offset: int, y_offset: int, output: str) -> int:
@@ -557,6 +567,10 @@ def show_cursor() -> None:
 
 def clear_screen() -> None:
     print(f"{CSI}2J")
+
+
+def clear_line_from_cursor() -> None:
+    print(f"{CSI}0K")
 
 
 def set_foreground(color: int, mode: ColorMode) -> None:
