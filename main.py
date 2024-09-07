@@ -9,8 +9,8 @@ import configparser
 from enum import Enum
 from queue import Queue
 from pathlib import Path
-from http_parser import HttpRequest, parse_http_file
 from dataclasses import dataclass
+from http_parser import HttpRequest, parse_http_file
 
 
 TITLE = "HTTP/TUI"      # For main application
@@ -32,6 +32,7 @@ class Theme:
     title_color:  int
     border_color: int
     active_color: int
+    selected_color: int
 
 
 @dataclass
@@ -217,6 +218,23 @@ def _main_loop(driver: any, args: Arguments) -> None:
     disable_buffer()
 
 
+def parse_colors(args: Arguments) -> Theme:
+    cp = configparser.ConfigParser()
+    cp.read(args.theme_file)
+    mode = args.color_mode.value
+    title_color = cp[mode]["title_color"]
+    border_color = cp[mode]["border_color"]
+    active_color = cp[mode]["active_section_color"]
+    selected_color = cp[mode]["active_request_color"]
+
+    return Theme(
+        title_color=title_color,
+        border_color=border_color,
+        active_color=active_color,
+        selected_color=selected_color
+    )
+
+
 def update_loop(bus: Queue, theme: Theme, args: Arguments,
                 requests: list[HttpRequest]) -> None:
     # Defaults to 80 columns by 24 lines
@@ -232,23 +250,21 @@ def update_loop(bus: Queue, theme: Theme, args: Arguments,
             message = bus.get()
             match message:
                 case Message.MoveUp:
-                    # TODO implement
-                    pass
+                    if state.active == Section.List:
+                        state.selected = update_selected(state, False)
+                    else:
+                        # TODO implement scroll
+                        pass
                 case Message.MoveDown:
-                    # TODO implement
-                    pass
+                    if state.active == Section.List:
+                        state.selected = update_selected(state, True)
+                    else:
+                        # TODO implement scroll
+                        pass
                 case Message.MoveLeft:
-                    current = state.active.value
-                    current -= 1
-                    if current < 0:
-                        current = 2
-                    state.active = (Section)(current)
+                    state.active = update_active(state, False)
                 case Message.MoveRight:
-                    current = state.active.value
-                    current += 1
-                    if current > 2:
-                        current = 0
-                    state.active = (Section)(current)
+                    state.active = update_active(state, True)
 
         new_size = shutil.get_terminal_size()
         if new_size != state.size:
@@ -261,6 +277,37 @@ def update_loop(bus: Queue, theme: Theme, args: Arguments,
         time.sleep(0.1)  # 100 miliseconds
 
 
+def update_active(state: RenderState, increase: bool) -> Section:
+    current = state.active.value
+
+    if increase:
+        current = state.active.value
+        current += 1
+        if current > 2:
+            current = 0
+    else:
+        current -= 1
+        if current < 0:
+            current = 2
+
+    return (Section)(current)
+
+
+def update_selected(state: RenderState, increase: bool) -> int:
+    current = state.selected
+
+    if increase:
+        current += 1
+        if current >= len(state.requests):
+            current = 0
+    else:
+        current -= 1
+        if current < 0:
+            current = len(state.requests) - 1
+
+    return current
+
+
 def render(state: RenderState, resize: bool) -> None:
     if resize:
         clear_screen()
@@ -269,66 +316,6 @@ def render(state: RenderState, resize: bool) -> None:
     render_borders(state)
     render_labels(state)
     render_request_list(state)
-
-
-def parse_colors(args: Arguments) -> Theme:
-    cp = configparser.ConfigParser()
-    cp.read(args.theme_file)
-    mode = args.color_mode.value
-    title_color = cp[mode]["title_color"]
-    border_color = cp[mode]["border_color"]
-    active_color = cp[mode]["active_color"]
-
-    return Theme(
-        title_color=title_color,
-        border_color=border_color,
-        active_color=active_color
-    )
-
-
-def enable_buffer() -> None:
-    '''Creates a new screen buffer'''
-    print(f"{CSI}{EN_ALT_BUF}")
-
-
-def disable_buffer() -> None:
-    '''Reverts screen back to
-    previous state before script'''
-    print(f"{CSI}{DIS_ALT_BUF}")
-
-
-def hide_cursor() -> None:
-    print(f"{CSI}?25l")
-
-
-def show_cursor() -> None:
-    print(f"{CSI}?25h")
-
-
-def clear_screen() -> None:
-    print(f"{CSI}2J")
-
-
-def set_foreground(color: int, mode: ColorMode) -> None:
-    prefix = f"{CSI}38;5;" if mode == ColorMode.Bit8 else f"{CSI};"
-    print(f"{prefix}{color}m", end="")
-
-
-def reset_style() -> None:
-    print(f"{CSI}0m", end="")
-
-
-def set_cursor(x: int, y: int) -> None:
-    '''
-    Escape sequence to move the
-    cursor with the assumption that
-    location (1,1) is at the top
-    left of the screen.
-
-    It also assumes that {x} and {y}
-    are based on character size.
-    '''
-    print(f'{CSI}{y};{x}H', end="")
 
 
 def render_title(state: RenderState) -> None:
@@ -426,13 +413,63 @@ def render_request_list(state: RenderState) -> None:
 
     set_cursor(x_offset, y_offset)
     for i in range(len(requests)):
+        if state.active == Section.List and state.selected == i:
+            set_foreground(state.theme.selected_color, state.args.color_mode)
+
         request = requests[i]
         name = request.name if request.name != "" else request.url
         if len(name) > max_w:
             name = name[:max_w - 2]  # Length of ..
             name = name + ".."
         print(name)
+
+        reset_style()
         set_cursor(x_offset, (y_offset + i) + 1)
+
+
+def enable_buffer() -> None:
+    '''Creates a new screen buffer'''
+    print(f"{CSI}{EN_ALT_BUF}")
+
+
+def disable_buffer() -> None:
+    '''Reverts screen back to
+    previous state before script'''
+    print(f"{CSI}{DIS_ALT_BUF}")
+
+
+def hide_cursor() -> None:
+    print(f"{CSI}?25l")
+
+
+def show_cursor() -> None:
+    print(f"{CSI}?25h")
+
+
+def clear_screen() -> None:
+    print(f"{CSI}2J")
+
+
+def set_foreground(color: int, mode: ColorMode) -> None:
+    prefix = f"{CSI}38;5;" if mode == ColorMode.Bit8 else f"{CSI};"
+    print(f"{prefix}{color}m", end="")
+
+
+def reset_style() -> None:
+    print(f"{CSI}0m", end="")
+
+
+def set_cursor(x: int, y: int) -> None:
+    '''
+    Escape sequence to move the
+    cursor with the assumption that
+    location (1,1) is at the top
+    left of the screen.
+
+    It also assumes that {x} and {y}
+    are based on character size.
+    '''
+    print(f'{CSI}{y};{x}H', end="")
 
 
 if __name__ == "__main__":
