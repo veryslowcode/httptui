@@ -1,9 +1,9 @@
 import sys
 import math
-# import time
 import shutil
 import signal
 import argparse
+import traceback
 import threading
 import configparser
 from enum import Enum
@@ -100,7 +100,6 @@ class RenderState:
     selected: int
     requests: list[HttpRequest]
     scroll:   ScrollState
-    rerender: list[bool]
     borders:  dict
     definition: list[str]
 
@@ -110,6 +109,9 @@ class Message(Enum):
     MoveDown = 1
     MoveLeft = 2
     MoveRight = 3
+
+
+global_exception: Exception = None
 
 
 def main() -> None:
@@ -198,6 +200,10 @@ def _win_main(args: Arguments) -> None:
         print(exception)
     finally:
         driver.reset(ostate, istate)
+        if global_exception is not None:
+            print(global_exception)
+            traceback.print_tb(global_exception.__traceback__)
+        sys.exit(1)
 
 
 def _nix_main(args: Arguments) -> None:
@@ -222,6 +228,10 @@ def _nix_main(args: Arguments) -> None:
         print(exception)
     finally:
         driver.reset(orig_state)
+        if global_exception is not None:
+            print(global_exception)
+            traceback.print_tb(global_exception.__traceback__)
+        sys.exit(1)
 
 
 def _main_loop(driver: any, args: Arguments) -> None:
@@ -250,7 +260,7 @@ def _main_loop(driver: any, args: Arguments) -> None:
     threads["update_thread"].start()
 
     f_quit = False  # Flag quit
-    while not f_quit:
+    while not f_quit and threads["update_thread"].is_alive():
         key = sys.stdin.read(1)
         match key:
             case driver.KeyCodes.QUIT.value:
@@ -291,6 +301,29 @@ def parse_colors(args: Arguments) -> Theme:
 def update_loop(bus: Queue, theme: Theme, args: Arguments,
                 requests: list[HttpRequest]) -> None:
     """
+    Simple wrapper to ensure global exception is
+    set, if needed, from the update thread.
+    """
+    try:
+        _update_loop(bus, theme, args, requests)
+    except Exception as exception:
+        clear_screen()
+
+        set_cursor(2, 2)
+        set_foreground(theme.text_color, args.color_mode)
+        print("An unexpected exception occured")
+
+        set_cursor(2, 3)
+        print("Press any key to continue")
+
+        global global_exception
+        global_exception = exception
+        sys.exit(1)
+
+
+def _update_loop(bus: Queue, theme: Theme, args: Arguments,
+                 requests: list[HttpRequest]) -> None:
+    """
     Processes messages produced by the update thread,
     updating render state and triggering a rerender.
     """
@@ -300,9 +333,8 @@ def update_loop(bus: Queue, theme: Theme, args: Arguments,
     borders = populate_borders(args)
     definition = []
 
-    state = RenderState(theme, args, size, Section.List,
-                        0, requests, scroll_state,
-                        [False, False, False], borders, definition)
+    state = RenderState(theme, args, size, Section.List, 0,
+                        requests, scroll_state, borders, definition)
 
     if len(requests) > 0:
         state.definition = populate_request_definition(state)
@@ -323,7 +355,6 @@ def update_loop(bus: Queue, theme: Theme, args: Arguments,
             resizeflag = True
 
         elif not bus.empty():
-            state.rerender = [False] * 3
             updateflag = True
             message = bus.get()
             match message:
@@ -344,7 +375,6 @@ def update_loop(bus: Queue, theme: Theme, args: Arguments,
 
         if updateflag:
             render(state, resizeflag)
-        # time.sleep(0.1)  # 100 miliseconds
 
 
 def populate_borders(args: Arguments) -> dict:
@@ -415,15 +445,10 @@ def update_scroll(state: RenderState, increase: bool) -> RenderState:
             state.scroll.request = 0
             state.scroll.response = 0
             updated = update_scroll_list(state, increase)
-            state.rerender = [False, True, True]
-            if state.scroll.rlist != updated:
-                state.rerender = [True] * 3
-                state.scroll.rlist = updated
+            state.scroll.rlist = updated
         case Section.Request:
             updated = update_scroll_request(state, increase)
-            if state.scroll.request != updated:
-                state.rerender[1] = True
-                state.scroll.request = updated
+            state.scroll.request = updated
         case Section.Response:
             # TODO implement
             pass
@@ -467,18 +492,15 @@ def update_scroll_request(state: RenderState, increase: bool) -> int:
     Returns an integer representing the request section
     scroll offset.
     """
-    adj_height = state.size.lines - Y_OFFSET
-    middle = math.floor(adj_height / 2)
-
-    max_height = (middle - 1) - Y_OFFSET
+    height = math.floor((state.size.lines - X_PADDING) / 2)
+    adj_height = height - Y_OFFSET - 2
     scroll = state.scroll.request
-    cap = len(state.definition) - 1
 
-    if cap < max_height:
+    if len(state.definition) < adj_height:
         return scroll
 
     if increase:
-        if scroll <= (cap - max_height):
+        if scroll < len(state.definition) - adj_height:
             scroll += 1
     elif scroll > 0:
         scroll -= 1
@@ -515,11 +537,6 @@ def render(state: RenderState, resize: bool) -> None:
     if resize:
         clear_screen()
 
-    # render_request_list(state)
-    # render_request_definition(state)
-    # render_borders(state)
-    # render_labels(state)
-    # render_title(state)
     render_header(state)
     render_list(state)
     render_request(state)
@@ -570,7 +587,7 @@ def render_list(state: RenderState) -> None:
     │ Url       │
     │ Url       │
     │ Url       │
-    │           │
+    │ ...       │
     ╰───────────╯
     """
     offset = 2  # Account for gap and top border
@@ -593,11 +610,15 @@ def render_list(state: RenderState) -> None:
 
     for index in range(height - Y_OFFSET - offset):
         set_cursor(X_OFFSET - 1, Y_OFFSET + index + offset)
-        request = state.requests[index + state.scroll.rlist]
 
-        name = request.name if request.name != "" else request.url
-        name = name.replace("\n", "").replace("\r", "")
-        line = f"{name}{' ' * (width - len(name))}"
+        if (len(state.requests) > index):
+            request = state.requests[index + state.scroll.rlist]
+            name = request.name if request.name != "" else request.url
+            name = name.replace("\n", "").replace("\r", "")
+            name = cap_line_width(width, name)
+            line = f"{name}{' ' * (width - len(name))}"
+        else:
+            line = ' ' * width
 
         print(f"{state.borders['v_border']}", end="")
 
@@ -619,208 +640,64 @@ def render_list(state: RenderState) -> None:
 
 
 def render_request(state: RenderState) -> None:
+    """
+    Renders the request definition section of the
+    interface and styles appropriately.
+    ╭─ Request ──────────╮
+    │ Method -> GET      │
+    │ URL -> example.com │
+    │ ...                │
+    ╰────────────────────╯
+    """
     height = math.floor((state.size.lines - X_PADDING) / 2)
 
+    offset = 2
     padding = X_PADDING * 2
     quarter = math.floor(state.size.columns / 4)
     width = state.size.columns - (quarter + (padding + 1))
 
     top, bottom = get_top_bottom_borders(state, width)
 
-    set_cursor(quarter + padding, Y_OFFSET + 1)
-    color = state.theme.active_color    \
+    color = state.theme.active_color       \
         if state.active == Section.Request \
         else state.theme.border_color
 
+    set_cursor(quarter + padding, Y_OFFSET + 1)
     set_foreground(color, state.args.color_mode)
     print(top, end="")
+
+    set_cursor(quarter + padding + offset, Y_OFFSET + 1)
+    set_foreground(state.theme.text_color, state.args.color_mode)
+    print(" Request ", end="")
+    set_foreground(color, state.args.color_mode)
+    scroll = state.scroll.request
+
+    for index in range(height - Y_OFFSET - 2):
+        line = f"{state.borders['v_border']}"
+        if len(state.definition) > index:
+            row = state.definition[index + scroll]
+            row = cap_line_width(width, str(row))
+            line += f"{row}{' ' * (width - len(row))}"
+        else:
+            line += " " * (width)
+        line += state.borders["v_border"]
+        set_cursor(quarter + padding, Y_OFFSET + index + offset)
+        print(line, end="")
 
     set_cursor(quarter + padding, height)
     print(bottom, end="")
 
 
 def get_top_bottom_borders(state: RenderState, width: int) -> (str, str):
-    top = f"{state.borders['lt_corner']}" + \
-          f"{state.borders['h_border'] * width}" +    \
+    top = f"{state.borders['lt_corner']}" +        \
+          f"{state.borders['h_border'] * width}" + \
           f"{state.borders['rt_corner']}"
 
-    bottom = f"{state.borders['lb_corner']}" + \
-             f"{state.borders['h_border'] * width}" +    \
+    bottom = f"{state.borders['lb_corner']}" +        \
+             f"{state.borders['h_border'] * width}" + \
              f"{state.borders['rb_corner']}"
 
     return (top, bottom)
-
-
-def render_title(state: RenderState) -> None:
-    """
-    Renders on the right-hand side of the screen
-    """
-    x_offset = 1
-    y_offset = 1
-    padding = 4
-
-    set_cursor(x_offset, y_offset)
-    print(" " * state.size.columns)
-
-    set_cursor(x_offset, y_offset)
-    offset = state.size.columns - (len(TITLE) + padding)
-    set_foreground(state.theme.title_color, state.args.color_mode)
-    print(f"{' ' * offset}{TITLE}")
-    reset_style()
-
-
-def render_borders(state: RenderState) -> None:
-    """
-    Renders box drawing characters to partition
-    sections of the interface, as depicted below:
-    Single Border             Double Border
-    ─────┬────────────        ═════╦════════════
-         │                         ║
-         ├────────────             ╠════════════
-         │                         ║
-    """
-    x_offset = math.floor(state.size.columns / 4)
-    x_padding = 1  # From the left edge
-    adj_height = state.size.lines - Y_OFFSET
-
-    if state.args.border_style == BorderStyle.Single:
-        h_border = Border.h_single
-        v_border = Border.v_single
-        t_border = Border.t_single
-        c_border = Border.c_single
-    else:
-        h_border = Border.h_double
-        v_border = Border.v_double
-        t_border = Border.t_double
-        c_border = Border.c_double
-
-    set_foreground(state.theme.border_color, state.args.color_mode)
-    set_cursor(x_padding, Y_OFFSET - 1)
-
-    print(f"{h_border * state.size.columns}")
-
-    for index in range(adj_height + 1):
-        set_cursor(x_offset, index + Y_OFFSET)
-        print(v_border, end="")
-
-    set_cursor(x_offset, Y_OFFSET - 1)
-    print(t_border)
-
-    middle = math.floor(adj_height / 2)
-    remainder = state.size.columns - x_offset
-    set_cursor(x_offset + 1, middle)
-    print(f"{h_border * remainder}", end="")
-
-    set_cursor(x_offset, middle)
-    print(c_border)
-
-    reset_style()
-
-
-def render_labels(state: RenderState) -> None:
-    """
-    Renders the labels associated with the sections:
-    List, Request, and Response. Also colors the
-    'active' one.
-    """
-    x_offset = math.floor(state.size.columns / 4)
-    adj_height = state.size.lines - Y_OFFSET
-    middle = math.floor(adj_height / 2)
-
-    set_cursor(X_PADDING, Y_OFFSET - 1)
-    if state.active == Section.List:
-        set_foreground(
-            state.theme.active_color,
-            state.args.color_mode
-        )
-    print(" List ")
-    reset_style()
-
-    set_cursor(x_offset + X_PADDING, Y_OFFSET - 1)
-    if state.active == Section.Request:
-        set_foreground(
-            state.theme.active_color,
-            state.args.color_mode
-        )
-    print(" Request ")
-    reset_style()
-
-    set_cursor(x_offset + X_PADDING, middle)
-    if state.active == Section.Response:
-        set_foreground(
-            state.theme.active_color,
-            state.args.color_mode
-        )
-    print(" Response ")
-    reset_style()
-
-
-def render_request_list(state: RenderState) -> None:
-    max_w = math.floor(state.size.columns / 4) - 1
-    requests = state.requests
-    scroll = state.scroll.rlist
-    adj_height = state.size.lines - Y_OFFSET
-
-    if state.rerender[0]:
-        for index in range(adj_height):
-            set_cursor(X_OFFSET, Y_OFFSET + index)
-            clear_line_from_cursor()
-
-    offset = 0
-    cap = len(requests)
-    if len(requests) >= adj_height:
-        cap = adj_height
-        offset = scroll
-
-    set_cursor(X_OFFSET, Y_OFFSET)
-    for i in range(cap):
-        if state.active == Section.List and state.selected == i + offset:
-            set_foreground(state.theme.selected_color, state.args.color_mode)
-
-        request = requests[i + offset]
-        name = request.name if request.name != "" else request.url
-        name = cap_line_width(max_w, name)
-        print(name)
-
-        reset_style()
-        set_cursor(X_OFFSET, (Y_OFFSET + i) + 1)
-
-
-def render_request_definition(state: RenderState) -> None:
-    x_offset = math.floor(state.size.columns / 4)
-    y_offset = 3   # Account for title
-    x_offset += X_PADDING
-
-    adj_height = state.size.lines - y_offset
-    middle = math.floor(adj_height / 2)
-    max_height = (middle - 1) - y_offset
-    max_width = state.size.columns - x_offset
-
-    if state.rerender[1]:
-        for index in range((middle - 1) - y_offset):
-            set_cursor(x_offset, y_offset + index)
-            clear_line_from_cursor()
-
-    definition = state.definition
-    scroll = state.scroll.request
-
-    if len(definition) >= max_height:
-        for row in range(max_height):
-            set_cursor(x_offset, y_offset)
-            line = cap_line_width(max_width, definition[row + scroll])
-            y_offset = render_incrementing_y(x_offset, y_offset, line)
-    else:
-        set_cursor(x_offset, y_offset)
-        for line in state.definition:
-            line = cap_line_width(max_width, line)
-            y_offset = render_incrementing_y(
-                    x_offset, y_offset, line)
-
-
-def render_incrementing_y(x_offset: int, y_offset: int, output: str) -> int:
-    set_cursor(x_offset, y_offset)
-    print(output)
-    return y_offset + 1
 
 
 def cap_line_width(max_w: int, line: str) -> str:
