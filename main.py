@@ -282,7 +282,7 @@ def _main_loop(driver: any, args: Arguments) -> None:
                 bus.put(Message.MoveLeft)
             case driver.KeyCodes.RIGHT.value:
                 bus.put(Message.MoveRight)
-            case driver.KeyCodes.ENTER.value:
+            case driver.KeyCodes.SPACE.value:
                 bus.put(Message.AwaitRequest)
         sys.stdin.flush()
 
@@ -358,6 +358,7 @@ def _update_loop(bus: Queue, theme: Theme, args: Arguments,
     while True:
         updateflag = False
         resizeflag = False
+        animateflag = False
 
         new_size = shutil.get_terminal_size()
         if new_size != state.size:
@@ -368,17 +369,19 @@ def _update_loop(bus: Queue, theme: Theme, args: Arguments,
             updateflag = True
             resizeflag = True
 
-        elif not bus.empty():
+        elif not bus.empty() and not state.await_request.waiting:
             updateflag = True
             message = bus.get()
             state = handle_bus_event(message, state)
         elif state.await_request.waiting:
             state.await_request.animation = update_request_animation(state)
-            updateflag = True
+            animateflag = True
             time.sleep(0.2)
 
         if updateflag:
             render(state, resizeflag)
+        elif animateflag:
+            render_await_request(state)
 
 
 def handle_bus_event(message: Message, state: RenderState) -> RenderState:
@@ -608,8 +611,6 @@ def render(state: RenderState, resize: bool) -> None:
     render_list(state)
     render_request(state)
     render_response(state)
-    if state.await_request.waiting:
-        render_await_request(state)
     print("")
 
     if state.args.debug:
@@ -840,7 +841,7 @@ def render_await_request(state: RenderState) -> None:
         else:
             line += small
 
-    print(line, end="")
+    print(line)
 
 
 def get_top_bottom_borders(state: RenderState, width: int) -> (str, str):

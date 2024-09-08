@@ -4,7 +4,7 @@ import ctypes
 
 
 class KeyCodes(Enum):
-    ENTER = "\x0D"
+    SPACE = "\x20"
     QUIT = "\x11"
     UP = "k"
     DOWN = "j"
