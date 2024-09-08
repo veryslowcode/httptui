@@ -1,5 +1,6 @@
 import sys
 import math
+import time
 import shutil
 import signal
 import argparse
@@ -85,6 +86,12 @@ class Section(Enum):
 
 
 @dataclass
+class AwaitState:
+    animation: int = 0
+    waiting:   bool = False
+
+
+@dataclass
 class ScrollState:
     rlist:    int
     request:  int
@@ -103,6 +110,7 @@ class RenderState:
     borders:  dict
     response: list[str]
     definition: list[str]
+    await_request: AwaitState
 
 
 class Message(Enum):
@@ -110,6 +118,8 @@ class Message(Enum):
     MoveDown = 1
     MoveLeft = 2
     MoveRight = 3
+    AwaitRequest = 4
+    ResponseReceived = 5
 
 
 global_exception: Exception = None
@@ -272,6 +282,8 @@ def _main_loop(driver: any, args: Arguments) -> None:
                 bus.put(Message.MoveLeft)
             case driver.KeyCodes.RIGHT.value:
                 bus.put(Message.MoveRight)
+            case driver.KeyCodes.ENTER.value:
+                bus.put(Message.AwaitRequest)
         sys.stdin.flush()
 
     show_cursor()
@@ -330,10 +342,13 @@ def _update_loop(bus: Queue, theme: Theme, args: Arguments,
     size = shutil.get_terminal_size()
     scroll_state = ScrollState(0, 0, 0)
     borders = populate_borders(args)
+    await_state = AwaitState()
     definition = []
+    response = []
 
     state = RenderState(theme, args, size, Section.List, 0, requests,
-                        scroll_state, borders, [], definition)
+                        scroll_state, borders, response,
+                        definition, await_state)
 
     if len(requests) > 0:
         state.definition = populate_request_definition(state)
@@ -356,26 +371,44 @@ def _update_loop(bus: Queue, theme: Theme, args: Arguments,
         elif not bus.empty():
             updateflag = True
             message = bus.get()
-            match message:
-                case Message.MoveUp:
-                    if state.active == Section.List:
-                        state.response = []
-                        state.selected = update_selected(state, False)
-                        state.definition = populate_request_definition(state)
-                    state = update_scroll(state, False)
-                case Message.MoveDown:
-                    if state.active == Section.List:
-                        state.response = []
-                        state.selected = update_selected(state, True)
-                        state.definition = populate_request_definition(state)
-                    state = update_scroll(state, True)
-                case Message.MoveLeft:
-                    state.active = update_active(state, False)
-                case Message.MoveRight:
-                    state.active = update_active(state, True)
+            state = handle_bus_event(message, state)
+        elif state.await_request.waiting:
+            state.await_request.animation = update_request_animation(state)
+            updateflag = True
+            time.sleep(0.2)
 
         if updateflag:
             render(state, resizeflag)
+
+
+def handle_bus_event(message: Message, state: RenderState) -> RenderState:
+    if not state.await_request.waiting:
+        match message:
+            case Message.MoveUp:
+                if state.active == Section.List:
+                    state.response = []
+                    state.selected = update_selected(state, False)
+                    state.definition = populate_request_definition(state)
+                state = update_scroll(state, False)
+            case Message.MoveDown:
+                if state.active == Section.List:
+                    state.response = []
+                    state.selected = update_selected(state, True)
+                    state.definition = populate_request_definition(state)
+                state = update_scroll(state, True)
+            case Message.MoveLeft:
+                state.active = update_active(state, False)
+            case Message.MoveRight:
+                state.active = update_active(state, True)
+            case Message.AwaitRequest:
+                state.response = []
+                state.await_request.waiting = True
+    else:
+        match message:
+            case Message.ResponseReceived:
+                state.await_request.waiting = False
+
+    return state
 
 
 def populate_borders(args: Arguments) -> dict:
@@ -535,6 +568,13 @@ def update_scroll_response(state: RenderState, increase: bool) -> int:
     return scroll
 
 
+def update_request_animation(state: RenderState) -> int:
+    update = state.await_request.animation + 1
+    if update >= 5:
+        update = 0
+    return update
+
+
 def populate_request_definition(state: RenderState) -> list[str]:
     """
     Pre-populate the renderable lines of the selected request
@@ -568,6 +608,8 @@ def render(state: RenderState, resize: bool) -> None:
     render_list(state)
     render_request(state)
     render_response(state)
+    if state.await_request.waiting:
+        render_await_request(state)
     print("")
 
     if state.args.debug:
@@ -770,6 +812,35 @@ def render_response(state: RenderState) -> None:
 
     set_cursor(quarter + padding, (height * 2) + 1)
     print(bottom, end="")
+
+
+def render_await_request(state: RenderState) -> None:
+    quarter = math.floor(state.size.columns / 4)
+    height = math.floor((state.size.lines - X_PADDING) / 2)
+    middle = math.floor(state.size.columns / 2) + math.floor(quarter / 2)
+
+    x_pos = middle
+    y_pos = height + math.floor(height / 2)
+
+    set_cursor(x_pos, y_pos)
+    small = "·"
+    large = "•"
+
+    normal = state.theme.text_color
+    active = state.theme.selected_color
+
+    line = ""
+    set_foreground(normal, state.args.color_mode)
+
+    for i in range(5):
+        if i == state.await_request.animation:
+            line += get_foreground(active, state.args.color_mode)
+            line += large
+            line += get_foreground(normal, state.args.color_mode)
+        else:
+            line += small
+
+    print(line, end="")
 
 
 def get_top_bottom_borders(state: RenderState, width: int) -> (str, str):

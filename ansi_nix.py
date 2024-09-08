@@ -5,6 +5,7 @@ import termios
 
 
 class KeyCodes(Enum):
+    ENTER = "\x0D"
     QUIT = "\x11"
     UP = "k"
     DOWN = "j"
