@@ -248,8 +248,6 @@ def _main_loop(driver: any, args: Arguments) -> None:
     bus = Queue()
 
     requests = parse_http_file(str(args.file))
-    for i in range(5):
-        requests += requests
 
     update_thread = threading.Thread(target=update_loop,
                                      args=(bus, theme, args, requests),
@@ -453,8 +451,8 @@ def update_scroll(state: RenderState, increase: bool) -> RenderState:
             updated = update_scroll_request(state, increase)
             state.scroll.request = updated
         case Section.Response:
-            # TODO implement
-            pass
+            updated = update_scroll_response(state, increase)
+            state.scroll.response = updated
 
     return state
 
@@ -504,6 +502,32 @@ def update_scroll_request(state: RenderState, increase: bool) -> int:
 
     if increase:
         if scroll < len(state.definition) - adj_height:
+            scroll += 1
+    elif scroll > 0:
+        scroll -= 1
+
+    return scroll
+
+
+def update_scroll_response(state: RenderState, increase: bool) -> int:
+    """
+    Calculates the scroll offset of the Response section,
+    increasing/decresing only if the response is greater
+    than the section height.
+
+    Returns an integer representing the response section
+    scroll offset.
+    """
+    height = math.floor((state.size.lines - X_PADDING) / 2)
+    adjustment = 2
+    adj_height = height - adjustment
+    scroll = state.scroll.response
+
+    if len(state.response) < adj_height:
+        return scroll
+
+    if increase:
+        if scroll < len(state.response) - adj_height:
             scroll += 1
     elif scroll > 0:
         scroll -= 1
@@ -725,7 +749,7 @@ def render_response(state: RenderState) -> None:
     set_foreground(color, state.args.color_mode)
     scroll = state.scroll.response
 
-    for index in range(height - 1):
+    for index in range(height - 2):
         line = f"{state.borders['v_border']}"
         response = state.response
         if response is not None and len(response) > index:
@@ -822,7 +846,8 @@ def _render_debug(state: RenderState) -> None:
         f"lislen {len(state.requests)} | " +                    \
         f"scr {state.scroll.rlist} {state.scroll.request} " +   \
         f"{state.scroll.response} | " +                         \
-        f"deflen {len(state.definition)}"
+        f"deflen {len(state.definition)} | " +                  \
+        f"reslen {len(state.response)}"
 
     pos_y = state.size.lines - 1
     pos_x = state.size.columns - len(debug) - 2
