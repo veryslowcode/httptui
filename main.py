@@ -470,7 +470,7 @@ def update_scroll_list(state: RenderState, increase: bool) -> int:
     adj_height = state.size.lines - Y_OFFSET - padding
 
     if len(state.requests) < adj_height:
-        return
+        return state.scroll.rlist
 
     scroll = state.scroll.rlist
     if increase:
@@ -705,7 +705,10 @@ def render_request(state: RenderState) -> None:
         if len(state.definition) > index:
             row = state.definition[index + scroll]
             row = cap_line_width(width, str(row))
+            line += get_foreground(state.theme.text_color,
+                                   state.args.color_mode)
             line += f"{row}{' ' * (width - len(row))}"
+            line += get_foreground(color, state.args.color_mode)
         else:
             line += " " * (width)
         line += state.borders["v_border"]
@@ -755,7 +758,10 @@ def render_response(state: RenderState) -> None:
         if response is not None and len(response) > index:
             row = response[index + scroll]
             row = cap_line_width(width, str(row))
+            line += get_foreground(state.theme.text_color,
+                                   state.args.color_mode)
             line += f"{row}{' ' * (width - len(row))}"
+            line += get_foreground(color, state.args.color_mode)
         else:
             line += " " * (width)
         line += state.borders["v_border"]
@@ -820,6 +826,11 @@ def clear_line_from_cursor() -> None:
 def set_foreground(color: int, mode: ColorMode) -> None:
     prefix = f"{CSI}38;5;" if mode == ColorMode.Bit8 else f"{CSI};"
     print(f"{prefix}{color}m", end="")
+
+
+def get_foreground(color: int, mode: ColorMode) -> str:
+    prefix = f"{CSI}38;5;" if mode == ColorMode.Bit8 else f"{CSI};"
+    return f"{prefix}{color}m"
 
 
 def reset_style() -> None:
