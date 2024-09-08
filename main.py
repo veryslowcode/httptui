@@ -101,6 +101,7 @@ class RenderState:
     requests: list[HttpRequest]
     scroll:   ScrollState
     borders:  dict
+    response: list[str]
     definition: list[str]
 
 
@@ -333,8 +334,8 @@ def _update_loop(bus: Queue, theme: Theme, args: Arguments,
     borders = populate_borders(args)
     definition = []
 
-    state = RenderState(theme, args, size, Section.List, 0,
-                        requests, scroll_state, borders, definition)
+    state = RenderState(theme, args, size, Section.List, 0, requests,
+                        scroll_state, borders, [], definition)
 
     if len(requests) > 0:
         state.definition = populate_request_definition(state)
@@ -360,11 +361,13 @@ def _update_loop(bus: Queue, theme: Theme, args: Arguments,
             match message:
                 case Message.MoveUp:
                     if state.active == Section.List:
+                        state.response = []
                         state.selected = update_selected(state, False)
                         state.definition = populate_request_definition(state)
                     state = update_scroll(state, False)
                 case Message.MoveDown:
                     if state.active == Section.List:
+                        state.response = []
                         state.selected = update_selected(state, True)
                         state.definition = populate_request_definition(state)
                     state = update_scroll(state, True)
@@ -493,7 +496,7 @@ def update_scroll_request(state: RenderState, increase: bool) -> int:
     scroll offset.
     """
     height = math.floor((state.size.lines - X_PADDING) / 2)
-    adj_height = height - Y_OFFSET - 2
+    adj_height = height - Y_OFFSET - 1
     scroll = state.scroll.request
 
     if len(state.definition) < adj_height:
@@ -540,6 +543,7 @@ def render(state: RenderState, resize: bool) -> None:
     render_header(state)
     render_list(state)
     render_request(state)
+    render_response(state)
     print("")
 
     if state.args.debug:
@@ -672,7 +676,7 @@ def render_request(state: RenderState) -> None:
     set_foreground(color, state.args.color_mode)
     scroll = state.scroll.request
 
-    for index in range(height - Y_OFFSET - 2):
+    for index in range(height - Y_OFFSET - 1):
         line = f"{state.borders['v_border']}"
         if len(state.definition) > index:
             row = state.definition[index + scroll]
@@ -684,7 +688,57 @@ def render_request(state: RenderState) -> None:
         set_cursor(quarter + padding, Y_OFFSET + index + offset)
         print(line, end="")
 
-    set_cursor(quarter + padding, height)
+    set_cursor(quarter + padding, height + 1)
+    print(bottom, end="")
+
+
+def render_response(state: RenderState) -> None:
+    """
+    Renders the response definition section of the
+    interface and styles appropriately.
+    ╭─ Response ─────────╮
+    │ Status Code 200    │
+    │ ...                │
+    │                    │
+    ╰────────────────────╯
+    """
+    height = math.floor((state.size.lines - X_PADDING) / 2)
+
+    offset = 2
+    padding = X_PADDING * 2
+    quarter = math.floor(state.size.columns / 4)
+    width = state.size.columns - (quarter + (padding + 1))
+
+    top, bottom = get_top_bottom_borders(state, width)
+
+    color = state.theme.active_color        \
+        if state.active == Section.Response \
+        else state.theme.border_color
+
+    set_cursor(quarter + padding, height + 2)
+    set_foreground(color, state.args.color_mode)
+    print(top, end="")
+
+    set_cursor(quarter + padding + offset, height + 2)
+    set_foreground(state.theme.text_color, state.args.color_mode)
+    print(" Response ", end="")
+    set_foreground(color, state.args.color_mode)
+    scroll = state.scroll.response
+
+    for index in range(height - 1):
+        line = f"{state.borders['v_border']}"
+        response = state.response
+        if response is not None and len(response) > index:
+            row = response[index + scroll]
+            row = cap_line_width(width, str(row))
+            line += f"{row}{' ' * (width - len(row))}"
+        else:
+            line += " " * (width)
+        line += state.borders["v_border"]
+        set_cursor(quarter + padding, height + index + offset + 1)
+        print(line, end="")
+
+    set_cursor(quarter + padding, (height * 2) + 1)
     print(bottom, end="")
 
 
