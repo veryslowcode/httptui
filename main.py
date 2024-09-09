@@ -90,6 +90,7 @@ class Section(Enum):
 @dataclass
 class AwaitState:
     animation: int = 0
+    error:     str = None
     waiting:   bool = False
     response:  requests.Response = None
 
@@ -123,11 +124,13 @@ class Message(Enum):
     MoveRight = 3
     AwaitRequest = 4
     ResponseReceived = 5
+    ResponseErrored = 6
 
 
 global_exception: Exception = None
-global_request: HttpRequest = None
-global_response: str = None
+global_request:   HttpRequest = None
+global_response:  requests.Response = None
+global_response_error: requests.RequestException = None
 
 
 def main() -> None:
@@ -382,11 +385,13 @@ def _update_loop(bus: Queue, theme: Theme, args: Arguments,
             updateflag = True
             resizeflag = True
             state.definition = populate_request_definition(state)
-            if len(state.response) > 0:
+            if state.await_request.response is not None:
                 state.response = populate_response(
                         state.await_request.response,
                         state)
-
+            elif state.await_request.error is not None:
+                error = state.await_request.error
+                state.response = populate_response_error(error, state)
         elif not bus.empty():
             message = bus.get()
             state, updateflag = handle_bus_event(message, state)
@@ -432,13 +437,23 @@ def handle_bus_event(message: Message, state: RenderState
                 state.active = update_active(state, True)
             case Message.AwaitRequest:
                 state.response = []
+                # state.await_request = AwaitState()
+                state.await_request.error = None
                 state.await_request.waiting = True
+                state.await_request.response = None
     else:
         match message:
             case Message.ResponseReceived:
                 global global_response
                 state.response = populate_response(global_response, state)
                 state.await_request.response = global_response
+                state.await_request.waiting = False
+                updateflag = True
+            case Message.ResponseErrored:
+                global global_response_error
+                state.await_request.error = str(global_response_error)
+                state.response = populate_response_error(
+                        str(global_response_error), state)
                 state.await_request.waiting = False
                 updateflag = True
 
@@ -457,9 +472,9 @@ def populate_response(response: requests.Response,
     width = state.size.columns - (quarter + (padding + 1))
 
     content = []
-    content.append(f"Status code -> {global_response.status_code} " +
+    content.append(f"Status code -> {response.status_code} " +
                    f"{response.reason}")
-    content += break_line_width(width, f"URL -> {global_response.url}")
+    content += break_line_width(width, f"URL -> {response.url}")
     content.append("")
     content.append("Headers:")
     for key, value in response.headers.items():
@@ -472,6 +487,17 @@ def populate_response(response: requests.Response,
         content.append("Body:")
         for line in response.text.splitlines():
             content += break_line_width(width, line)
+
+    return content
+
+
+def populate_response_error(error: str, state: RenderState) -> list[str]:
+    padding = X_PADDING * 2
+    quarter = math.floor(state.size.columns / 4)
+    width = state.size.columns - (quarter + (padding + 1))
+    content = []
+    for line in error.splitlines():
+        content += break_line_width(width, line)
 
     return content
 
@@ -1048,7 +1074,17 @@ def _render_debug(state: RenderState) -> None:
 def send_request(request: HttpRequest, bus: Queue) -> None:
     """
     Primary function that comprises the request thread.
+    Wraps implementation try/expect.
     """
+    try:
+        _send_request(request, bus)
+    except Exception as exception:
+        global global_response_error
+        global_response_error = exception
+        bus.put(Message.ResponseErrored)
+
+
+def _send_request(request: HttpRequest, bus: Queue) -> None:
     global global_response
     file = None
     data = None
