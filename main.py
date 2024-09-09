@@ -12,6 +12,7 @@ from enum import Enum
 from queue import Queue
 from pathlib import Path
 from dataclasses import dataclass
+from req_struct import HttpBodyType
 from http_parser import HttpRequest, parse_http_file
 
 
@@ -261,18 +262,15 @@ def _main_loop(driver: any, args: Arguments) -> None:
     bus = Queue()
 
     requests = parse_http_file(str(args.file))
+
+    global global_request
     global_request = requests[0]
 
     update_thread = threading.Thread(target=update_loop,
                                      args=(bus, theme, args, requests),
                                      daemon=True)
-
-    request_thread = threading.Thread(target=send_request,
-                                      args=(global_request, bus),
-                                      daemon=True)
     threads = {
         "update_thread": update_thread,
-        "request_thread": request_thread
     }
     threads["update_thread"].start()
 
@@ -292,6 +290,11 @@ def _main_loop(driver: any, args: Arguments) -> None:
                 bus.put(Message.MoveRight)
             case driver.KeyCodes.SPACE.value:
                 bus.put(Message.AwaitRequest)
+                threads["request_thread"] = threading.Thread(
+                    target=send_request,
+                    args=(global_request, bus),
+                    daemon=True
+                )
                 threads["request_thread"].start()
         sys.stdin.flush()
 
@@ -394,6 +397,7 @@ def _update_loop(bus: Queue, theme: Theme, args: Arguments,
 
 def handle_bus_event(message: Message, state: RenderState
                      ) -> (RenderState, bool):
+    global global_request
     if not state.await_request.waiting:
         updateflag = True
         match message:
@@ -402,12 +406,14 @@ def handle_bus_event(message: Message, state: RenderState
                     state.response = []
                     state.selected = update_selected(state, False)
                     state.definition = populate_request_definition(state)
+                    global_request = state.requests[state.selected]
                 state = update_scroll(state, False)
             case Message.MoveDown:
                 if state.active == Section.List:
                     state.response = []
                     state.selected = update_selected(state, True)
                     state.definition = populate_request_definition(state)
+                    global_request = state.requests[state.selected]
                 state = update_scroll(state, True)
             case Message.MoveLeft:
                 state.active = update_active(state, False)
@@ -441,7 +447,7 @@ def populate_response(response: requests.Response) -> list[str]:
         content.append(f"{key}: {value}")
     content.append("")
     if response.text != "":
-        content.append(f"{response.text}")
+        content += response.text.split("\n")
 
     return content
 
@@ -974,9 +980,29 @@ def _render_debug(state: RenderState) -> None:
 
 
 def send_request(request: HttpRequest, bus: Queue) -> None:
-    response = requests.request(request.method.value.upper(),
-                                request.url,
-                                headers=request.headers)
+    json = None
+    data = None
+    file = None
+    if request.body is not None:
+        match request.body.body_type:
+            case HttpBodyType.textplain:
+                data = request.body.body
+            case HttpBodyType.xwwwformurlencoded:
+                data = request.body.body
+            case HttpBodyType.json:
+                json = request.body.body
+            case HttpBodyType.multipartformdata:
+                file = request.body.body
+        response = requests.request(request.method.value.upper(),
+                                    request.url,
+                                    headers=request.headers,
+                                    json=json,
+                                    data=data,
+                                    files=file)
+    else:
+        response = requests.request(request.method.value.upper(),
+                                    request.url,
+                                    headers=request.headers)
     global global_response
     global_response = response
     bus.put(Message.ResponseReceived)
