@@ -440,7 +440,8 @@ def populate_response(response: requests.Response) -> list[str]:
     application to use for rendering.
     """
     content = []
-    content.append(f"Status code -> {global_response.status_code}")
+    content.append(f"Status code -> {global_response.status_code} " +
+                   f"{response.reason}")
     content.append("")
     content.append("Headers:")
     for key, value in response.headers.items():
