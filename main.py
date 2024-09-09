@@ -3,6 +3,7 @@ import math
 import time
 import shutil
 import signal
+import requests
 import argparse
 import traceback
 import threading
@@ -123,6 +124,8 @@ class Message(Enum):
 
 
 global_exception: Exception = None
+global_request: HttpRequest = None
+global_response: str = None
 
 
 def main() -> None:
@@ -258,13 +261,18 @@ def _main_loop(driver: any, args: Arguments) -> None:
     bus = Queue()
 
     requests = parse_http_file(str(args.file))
+    global_request = requests[0]
 
     update_thread = threading.Thread(target=update_loop,
                                      args=(bus, theme, args, requests),
                                      daemon=True)
+
+    request_thread = threading.Thread(target=send_request,
+                                      args=(global_request, bus),
+                                      daemon=True)
     threads = {
-        "update_thread": update_thread
-        # TODO add request thread
+        "update_thread": update_thread,
+        "request_thread": request_thread
     }
     threads["update_thread"].start()
 
@@ -284,6 +292,7 @@ def _main_loop(driver: any, args: Arguments) -> None:
                 bus.put(Message.MoveRight)
             case driver.KeyCodes.SPACE.value:
                 bus.put(Message.AwaitRequest)
+                threads["request_thread"].start()
         sys.stdin.flush()
 
     show_cursor()
@@ -369,10 +378,9 @@ def _update_loop(bus: Queue, theme: Theme, args: Arguments,
             updateflag = True
             resizeflag = True
 
-        elif not bus.empty() and not state.await_request.waiting:
-            updateflag = True
+        elif not bus.empty():
             message = bus.get()
-            state = handle_bus_event(message, state)
+            state, updateflag = handle_bus_event(message, state)
         elif state.await_request.waiting:
             state.await_request.animation = update_request_animation(state)
             animateflag = True
@@ -384,8 +392,10 @@ def _update_loop(bus: Queue, theme: Theme, args: Arguments,
             render_await_request(state)
 
 
-def handle_bus_event(message: Message, state: RenderState) -> RenderState:
+def handle_bus_event(message: Message, state: RenderState
+                     ) -> (RenderState, bool):
     if not state.await_request.waiting:
+        updateflag = True
         match message:
             case Message.MoveUp:
                 if state.active == Section.List:
@@ -409,9 +419,31 @@ def handle_bus_event(message: Message, state: RenderState) -> RenderState:
     else:
         match message:
             case Message.ResponseReceived:
+                global global_response
+                state.response = populate_response(global_response)
                 state.await_request.waiting = False
+                updateflag = True
 
-    return state
+    return (state, updateflag)
+
+
+def populate_response(response: requests.Response) -> list[str]:
+    """
+    Given a response object, this parses the content
+    and creates an array of that content for the
+    application to use for rendering.
+    """
+    content = []
+    content.append(f"Status code -> {global_response.status_code}")
+    content.append("")
+    content.append("Headers:")
+    for key, value in response.headers.items():
+        content.append(f"{key}: {value}")
+    content.append("")
+    if response.text != "":
+        content.append(f"{response.text}")
+
+    return content
 
 
 def populate_borders(args: Arguments) -> dict:
@@ -587,7 +619,6 @@ def populate_request_definition(state: RenderState) -> list[str]:
     request = state.requests[state.selected]
     lines.append(f"Method -> {request.method.value}")
     lines.append(f"URL -> {request.url}")
-    lines.append(f"Encrypted -> {request.encrypted}")
     lines.append("")  # Additional after metadata
 
     if request.headers:
@@ -940,6 +971,15 @@ def _render_debug(state: RenderState) -> None:
 
     set_cursor(pos_x, pos_y)
     print(debug)
+
+
+def send_request(request: HttpRequest, bus: Queue) -> None:
+    response = requests.request(request.method.value.upper(),
+                                request.url,
+                                headers=request.headers)
+    global global_response
+    global_response = response
+    bus.put(Message.ResponseReceived)
 
 
 if __name__ == "__main__":

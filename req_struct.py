@@ -6,10 +6,9 @@ class HttpMethod(Enum):
     GET = "GET"
     PUT = "PUT"
     POST = "POST"
+    HEAD = "HEAD"
     PATCH = "PATCH"
-    TRACE = "TRACE"
     DELETE = "DELETE"
-    CONNECT = "CONNECT"
     OPTIONS = "OPTIONS"
 
 
@@ -36,7 +35,6 @@ class HttpRequest():
     version: float
     body: HttpBody
     method: HttpMethod
-    encrypted: bool  # HTTPS or HTTP
     name: str = ""   # Non-essential
 
     def __str__(self) -> str:
