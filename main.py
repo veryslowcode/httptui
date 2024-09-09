@@ -91,6 +91,7 @@ class Section(Enum):
 class AwaitState:
     animation: int = 0
     waiting:   bool = False
+    response:  requests.Response = None
 
 
 @dataclass
@@ -380,6 +381,11 @@ def _update_loop(bus: Queue, theme: Theme, args: Arguments,
             state.size = new_size
             updateflag = True
             resizeflag = True
+            state.definition = populate_request_definition(state)
+            if len(state.response) > 0:
+                state.response = populate_response(
+                        state.await_request.response,
+                        state)
 
         elif not bus.empty():
             message = bus.get()
@@ -387,7 +393,7 @@ def _update_loop(bus: Queue, theme: Theme, args: Arguments,
         elif state.await_request.waiting:
             state.await_request.animation = update_request_animation(state)
             animateflag = True
-            time.sleep(0.2)
+            time.sleep(0.2)  # 200 miliseconds
 
         if updateflag:
             render(state, resizeflag)
@@ -397,6 +403,11 @@ def _update_loop(bus: Queue, theme: Theme, args: Arguments,
 
 def handle_bus_event(message: Message, state: RenderState
                      ) -> (RenderState, bool):
+    """
+    Makes the necessary calls upon receiving a
+    message from the bus, returning the updated
+    state and an updateflag value.
+    """
     global global_request
     if not state.await_request.waiting:
         updateflag = True
@@ -426,29 +437,41 @@ def handle_bus_event(message: Message, state: RenderState
         match message:
             case Message.ResponseReceived:
                 global global_response
-                state.response = populate_response(global_response)
+                state.response = populate_response(global_response, state)
+                state.await_request.response = global_response
                 state.await_request.waiting = False
                 updateflag = True
 
     return (state, updateflag)
 
 
-def populate_response(response: requests.Response) -> list[str]:
+def populate_response(response: requests.Response,
+                      state: RenderState) -> list[str]:
     """
     Given a response object, this parses the content
     and creates an array of that content for the
     application to use for rendering.
     """
+    padding = X_PADDING * 2
+    quarter = math.floor(state.size.columns / 4)
+    width = state.size.columns - (quarter + (padding + 1))
+
     content = []
     content.append(f"Status code -> {global_response.status_code} " +
                    f"{response.reason}")
+    content += break_line_width(width, f"URL -> {global_response.url}")
     content.append("")
     content.append("Headers:")
     for key, value in response.headers.items():
-        content.append(f"{key}: {value}")
+        line = f"{key}: {value}"
+        lines = break_line_width(width, line)
+        content += lines
     content.append("")
+
     if response.text != "":
-        content += response.text.split("\n")
+        content.append("Body:")
+        for line in response.text.splitlines():
+            content += break_line_width(width, line)
 
     return content
 
@@ -622,21 +645,25 @@ def populate_request_definition(state: RenderState) -> list[str]:
     Pre-populate the renderable lines of the selected request
     definition to allow for easy scroll functionality.
     """
+    padding = X_PADDING * 2
+    quarter = math.floor(state.size.columns / 4)
+    width = state.size.columns - (quarter + (padding + 1))
+
     lines = []
     request = state.requests[state.selected]
     lines.append(f"Method -> {request.method.value}")
-    lines.append(f"URL -> {request.url}")
+    lines += break_line_width(width, f"URL -> {request.url}")
     lines.append("")  # Additional after metadata
 
     if request.headers:
         lines.append("Headers:")
         for key, value in request.headers.items():
-            lines.append(f"{key}: {value}")
+            lines += break_line_width(width, f"{key}: {value}")
         lines.append("")  # Additional separation after headers
 
     if request.body is not None:
         lines.append("Body:")
-        lines.append(request.body)
+        lines += break_line_width(width, request.body.body)
 
     return lines
 
@@ -854,6 +881,15 @@ def render_response(state: RenderState) -> None:
 
 
 def render_await_request(state: RenderState) -> None:
+    """
+    Renders the loading animation in the response
+    section of the interface.
+    ╭─ Response ─────────╮
+    │                    │
+    │       ··•··        │
+    │                    │
+    ╰────────────────────╯
+    """
     quarter = math.floor(state.size.columns / 4)
     height = math.floor((state.size.lines - X_PADDING) / 2)
     middle = math.floor(state.size.columns / 2) + math.floor(quarter / 2)
@@ -895,11 +931,40 @@ def get_top_bottom_borders(state: RenderState, width: int) -> (str, str):
 
 
 def cap_line_width(max_w: int, line: str) -> str:
+    """
+    Cuts a line short, appending with ..
+    to indicate this
+    """
     if len(str(line)) > max_w:
         capped = str(line)[:max_w - 2]  # Length of ..
         capped = capped + ".."
         line = capped
     return line
+
+
+def break_line_width(max_w: int, line: str) -> list[str]:
+    """
+    This breaks a line into a list of strings based on
+    a provided width, indenting the broken peices.
+    """
+    line = str(line)
+    if len(line) <= max_w:
+        return [line]
+
+    offset = 0
+    result = []
+    result.append(line[:max_w])
+
+    indent = "  "
+    sample = line[max_w:]
+    for index in range(math.floor(len(sample) / (max_w + 2))):
+        result.append(f"{indent}{sample[offset:offset + max_w - len(indent)]}")
+        offset += max_w - len(indent)
+
+    if len(line) % max_w != 0:
+        result.append(f"{indent}{sample[offset:]}")
+
+    return result
 
 
 def enable_buffer() -> None:
@@ -981,30 +1046,34 @@ def _render_debug(state: RenderState) -> None:
 
 
 def send_request(request: HttpRequest, bus: Queue) -> None:
-    json = None
-    data = None
+    """
+    Primary function that comprises the request thread.
+    """
+    global global_response
     file = None
-    if request.body is not None:
+    data = None
+    djson = None
+
+    if request.body is None:
+        response = requests.request(
+            request.method.value.upper(),
+            request.url, headers=request.headers)
+    else:
         match request.body.body_type:
             case HttpBodyType.textplain:
                 data = request.body.body
             case HttpBodyType.xwwwformurlencoded:
                 data = request.body.body
             case HttpBodyType.json:
-                json = request.body.body
+                djson = request.body.body
             case HttpBodyType.multipartformdata:
                 file = request.body.body
-        response = requests.request(request.method.value.upper(),
-                                    request.url,
-                                    headers=request.headers,
-                                    json=json,
-                                    data=data,
-                                    files=file)
-    else:
-        response = requests.request(request.method.value.upper(),
-                                    request.url,
-                                    headers=request.headers)
-    global global_response
+
+        response = requests.request(
+            request.method.value.upper(), request.url,
+            headers=request.headers, json=djson,
+            data=data, files=file)
+
     global_response = response
     bus.put(Message.ResponseReceived)
 
