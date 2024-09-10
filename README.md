@@ -13,7 +13,7 @@ options:
   -h, --help            show this help message and exit
   -t THEME, --theme THEME
                         Path to theme file (defaults to 'theme.ini')
-  -m MODE, --mode MODE  Color style: '4bit' or '8bit' (defaults to '8bit')
+  -m MODE, --mode MODE  Color style: '4bit', '8bit', or '24bit' (defaults to '24bit')
   -b BORDER, --border BORDER
                         Border style: 'single' or 'double' (defaults to 'single')
   -f FILE, --file FILE  Path to requests file (defaults to script 'requests.http')

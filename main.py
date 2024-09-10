@@ -670,7 +670,7 @@ def parse_args() -> Arguments:
 
     parser.add_argument("-m", "--mode",
                         help="Color style: '4bit', '8bit', or '24bit' " +
-                        "(defaults to '8bit')")
+                        "(defaults to '24bit')")
 
     parser.add_argument("-b", "--border",
                         help="Border style: 'single' or 'double' " +

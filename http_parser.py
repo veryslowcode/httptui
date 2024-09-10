@@ -178,7 +178,10 @@ def _populate_headers(line: str, request: HttpRequest) -> HttpRequest:
 
 
 def _populate_metadata(line: str, request: HttpRequest) -> HttpRequest:
-    # [HTTP Method] [URL] [HTTP Version]
+    """
+    Responsible for the [HTTP Method] [URL] [HTTP Version] portion of the
+    http file
+    """
     # _populate_metadata {{{
     split = line.split(" ")
     request.method = (HttpMethod)(split[0].upper())
