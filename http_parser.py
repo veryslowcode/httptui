@@ -183,7 +183,10 @@ def _populate_metadata(line: str, request: HttpRequest) -> HttpRequest:
     split = line.split(" ")
     request.method = (HttpMethod)(split[0].upper())
     request.url = split[1]
-    request.version = (float)(split[2])
+    if len(split) > 2:
+        request.version = (float)(split[2])
+    else:
+        request.version = 1.1
     return request
     # }}}
 
