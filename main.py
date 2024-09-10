@@ -432,7 +432,7 @@ def break_line_width(max_w: int, line: str) -> list[str]:
     a provided width, indenting the broken peices.
     """
     # break_line_width {{{
-    line = str(line).rstrip()
+    line = str(line)
     if len(line) < max_w:
         return [line]
 
