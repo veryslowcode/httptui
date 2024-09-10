@@ -36,6 +36,7 @@ class ColorMode(Enum):
     # ColorMode {{{
     Bit4 = "4bit"       # Color immediately after CSI
     Bit8 = "8bit"       # Sequence is as follows: 35:5:{color}
+    Bit24 = "24bit"     # RGB color sequence
     # }}}
 
 
@@ -86,7 +87,7 @@ class Arguments:
     debug: bool = False
     file: str = "requests.http"
     theme_file: str = "theme.ini"
-    color_mode: ColorMode = ColorMode.Bit8
+    color_mode: ColorMode = ColorMode.Bit24
     border_style: BorderStyle = BorderStyle.Rounded
     # }}}
 
@@ -528,10 +529,19 @@ def enable_buffer() -> None:
     # }}}
 
 
-def get_foreground(color: int, mode: ColorMode) -> str:
+def get_foreground(color: str, mode: ColorMode) -> str:
     # get_foreground {{{
-    prefix = f"{CSI}38;5;" if mode == ColorMode.Bit8 else f"{CSI};"
-    return f"{prefix}{color}m"
+    match mode:
+        case ColorMode.Bit4:
+            prefix = f"{CSI}"
+            return f"{prefix}{color}m"
+        case ColorMode.Bit8:
+            prefix = f"{CSI}38;5;"
+            return f"{prefix}{color}m"
+        case ColorMode.Bit24:
+            r, g, b = color.split(",")
+            prefix = f"{CSI}38;2;"
+            return f"{prefix}{r};{g};{b}m"
     # }}}
 
 
@@ -655,7 +665,7 @@ def parse_args() -> Arguments:
                         "(defaults to 'theme.ini')")
 
     parser.add_argument("-m", "--mode",
-                        help="Color style: '4bit' or '8bit' " +
+                        help="Color style: '4bit', '8bit', or '24bit' " +
                         "(defaults to '8bit')")
 
     parser.add_argument("-b", "--border",
@@ -704,11 +714,27 @@ def parse_colors(args: Arguments) -> Theme:
     cp = configparser.ConfigParser()
     cp.read(args.theme_file)
     mode = args.color_mode.value
-    text_color = cp[mode]["text_color"]
-    title_color = cp[mode]["title_color"]
-    border_color = cp[mode]["border_color"]
-    active_color = cp[mode]["active_section_color"]
-    selected_color = cp[mode]["active_request_color"]
+
+    text_color = validate_colors(
+        "text_color", cp[mode]["text_color"],
+        args.color_mode
+    )
+    title_color = validate_colors(
+        "title_color", cp[mode]["title_color"],
+        args.color_mode
+    )
+    border_color = validate_colors(
+        "border_color", cp[mode]["border_color"],
+        args.color_mode
+    )
+    active_color = validate_colors(
+        "active_section_color", cp[mode]["active_section_color"],
+        args.color_mode
+    )
+    selected_color = validate_colors(
+        "active_request_color", cp[mode]["active_request_color"],
+        args.color_mode
+    )
 
     return Theme(
         text_color=text_color,
@@ -1158,10 +1184,19 @@ def set_cursor(x: int, y: int) -> None:
     # }}}
 
 
-def set_foreground(color: int, mode: ColorMode) -> None:
+def set_foreground(color: str, mode: ColorMode) -> None:
     # set_foreground {{{
-    prefix = f"{CSI}38;5;" if mode == ColorMode.Bit8 else f"{CSI};"
-    print(f"{prefix}{color}m", end="")
+    match mode:
+        case ColorMode.Bit4:
+            prefix = f"{CSI}"
+            print(f"{prefix}{color}m", end="")
+        case ColorMode.Bit8:
+            prefix = f"{CSI}38;5;"
+            print(f"{prefix}{color}m", end="")
+        case ColorMode.Bit24:
+            r, g, b = color.split(",")
+            prefix = f"{CSI}38;2;"
+            print(f"{prefix}{r};{g};{b}m", end="")
     # }}}
 
 
@@ -1333,6 +1368,27 @@ def update_selected(state: RenderState, increase: bool) -> int:
             current -= 1
 
     return current
+    # }}}
+
+
+def validate_colors(key: str, color: str, mode: ColorMode) -> str:
+    """
+    We may be expecting an integer value or an array depending
+    on the color mode. This validates the expected format.
+    """
+    # validate_colors {{{
+    if mode == ColorMode.Bit24:
+        split = color.split(",")
+        if len(split) != 3:
+            raise Exception(f"Invalid RGB color format for {key}={color}")
+        else:
+            return color
+    else:
+        try:
+            int(color)
+            return color
+        except Exception:
+            raise Exception(f"Color must be an integer for {key}={color}")
     # }}}
 
 
