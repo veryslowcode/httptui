@@ -11,6 +11,7 @@ class KeyCodes(Enum):
     DOWN = "j"
     LEFT = "h"
     RIGHT = "l"
+    EXPAND = "e"
 
 
 def initialize() -> list:

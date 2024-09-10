@@ -87,6 +87,12 @@ class Section(Enum):
     Response = 2
 
 
+class Expanded(Enum):
+    Main = 0
+    Request = 1
+    Response = 2
+
+
 @dataclass
 class AwaitState:
     animation: int = 0
@@ -104,16 +110,17 @@ class ScrollState:
 
 @dataclass
 class RenderState:
-    theme:    Theme
-    args:     Arguments
-    size:     tuple[int, int]
-    active:   Section
-    selected: int
-    requests: list[HttpRequest]
-    scroll:   ScrollState
-    borders:  dict
-    response: list[str]
-    definition: list[str]
+    theme:         Theme
+    args:          Arguments
+    size:          tuple[int, int]
+    active:        Section
+    selected:      int
+    requests:      list[HttpRequest]
+    scroll:        ScrollState
+    borders:       dict
+    response:      list[str]
+    expanded:      Expanded
+    definition:    list[str]
     await_request: AwaitState
 
 
@@ -122,11 +129,13 @@ class Message(Enum):
     MoveDown = 1
     MoveLeft = 2
     MoveRight = 3
-    AwaitRequest = 4
-    ResponseReceived = 5
-    ResponseErrored = 6
+    Expand = 4
+    AwaitRequest = 5
+    ResponseReceived = 6
+    ResponseErrored = 7
 
 
+# Globals, be cautious with use
 global_exception: Exception = None
 global_request:   HttpRequest = None
 global_response:  requests.Response = None
@@ -284,14 +293,22 @@ def _main_loop(driver: any, args: Arguments) -> None:
         match key:
             case driver.KeyCodes.QUIT.value:
                 f_quit = True
+
             case driver.KeyCodes.UP.value:
                 bus.put(Message.MoveUp)
+
             case driver.KeyCodes.DOWN.value:
                 bus.put(Message.MoveDown)
+
             case driver.KeyCodes.LEFT.value:
                 bus.put(Message.MoveLeft)
+
             case driver.KeyCodes.RIGHT.value:
                 bus.put(Message.MoveRight)
+
+            case driver.KeyCodes.EXPAND.value:
+                bus.put(Message.Expand)
+
             case driver.KeyCodes.SPACE.value:
                 bus.put(Message.AwaitRequest)
                 threads["request_thread"] = threading.Thread(
@@ -300,6 +317,7 @@ def _main_loop(driver: any, args: Arguments) -> None:
                     daemon=True
                 )
                 threads["request_thread"].start()
+
         sys.stdin.flush()
 
     show_cursor()
@@ -364,7 +382,7 @@ def _update_loop(bus: Queue, theme: Theme, args: Arguments,
 
     state = RenderState(theme, args, size, Section.List, 0, requests,
                         scroll_state, borders, response,
-                        definition, await_state)
+                        Expanded.Main, definition, await_state)
 
     if len(requests) > 0:
         state.definition = populate_request_definition(state)
@@ -384,17 +402,20 @@ def _update_loop(bus: Queue, theme: Theme, args: Arguments,
             state.size = new_size
             updateflag = True
             resizeflag = True
+
             state.definition = populate_request_definition(state)
+
             if state.await_request.response is not None:
                 state.response = populate_response(
-                        state.await_request.response,
-                        state)
+                        state.await_request.response, state)
             elif state.await_request.error is not None:
                 error = state.await_request.error
                 state.response = populate_response_error(error, state)
+
         elif not bus.empty():
             message = bus.get()
-            state, updateflag = handle_bus_event(message, state)
+            state, updateflag, resizeflag = handle_bus_event(message, state)
+
         elif state.await_request.waiting:
             state.await_request.animation = update_request_animation(state)
             animateflag = True
@@ -407,15 +428,17 @@ def _update_loop(bus: Queue, theme: Theme, args: Arguments,
 
 
 def handle_bus_event(message: Message, state: RenderState
-                     ) -> (RenderState, bool):
+                     ) -> (RenderState, bool, bool):
     """
     Makes the necessary calls upon receiving a
     message from the bus, returning the updated
     state and an updateflag value.
     """
     global global_request
+    resizeflag = False
     if not state.await_request.waiting:
         updateflag = True
+
         match message:
             case Message.MoveUp:
                 if state.active == Section.List:
@@ -424,6 +447,7 @@ def handle_bus_event(message: Message, state: RenderState
                     state.definition = populate_request_definition(state)
                     global_request = state.requests[state.selected]
                 state = update_scroll(state, False)
+
             case Message.MoveDown:
                 if state.active == Section.List:
                     state.response = []
@@ -431,16 +455,38 @@ def handle_bus_event(message: Message, state: RenderState
                     state.definition = populate_request_definition(state)
                     global_request = state.requests[state.selected]
                 state = update_scroll(state, True)
+
             case Message.MoveLeft:
                 state.active = update_active(state, False)
+
             case Message.MoveRight:
                 state.active = update_active(state, True)
+
+            case Message.Expand:
+                if state.expanded != Expanded.Main:
+                    state.expanded = Expanded.Main
+                elif state.active == Section.Request:
+                    state.expanded = Expanded.Request
+                elif state.active == Section.Response:
+                    state.expanded = Expanded.Response
+
+                state.definition = populate_request_definition(state)
+
+                if state.await_request.response is not None:
+                    state.response = populate_response(
+                        state.await_request.response, state)
+                elif state.await_request.error is not None:
+                    error = state.await_request.error
+                    state.response = populate_response_error(error, state)
+
+                resizeflag = True
+
             case Message.AwaitRequest:
                 state.response = []
-                # state.await_request = AwaitState()
                 state.await_request.error = None
                 state.await_request.waiting = True
                 state.await_request.response = None
+
     else:
         match message:
             case Message.ResponseReceived:
@@ -449,6 +495,7 @@ def handle_bus_event(message: Message, state: RenderState
                 state.await_request.response = global_response
                 state.await_request.waiting = False
                 updateflag = True
+
             case Message.ResponseErrored:
                 global global_response_error
                 state.await_request.error = str(global_response_error)
@@ -457,7 +504,7 @@ def handle_bus_event(message: Message, state: RenderState
                 state.await_request.waiting = False
                 updateflag = True
 
-    return (state, updateflag)
+    return (state, updateflag, resizeflag)
 
 
 def populate_response(response: requests.Response,
@@ -467,9 +514,9 @@ def populate_response(response: requests.Response,
     and creates an array of that content for the
     application to use for rendering.
     """
-    padding = X_PADDING * 2
-    quarter = math.floor(state.size.columns / 4)
-    width = state.size.columns - (quarter + (padding + 1))
+    offset, _ = calculate_rr_offset(state)
+    width, _ = calculate_rr_size(state)
+    width = width - offset
 
     content = []
     content.append(f"Status code -> {response.status_code} " +
@@ -492,9 +539,10 @@ def populate_response(response: requests.Response,
 
 
 def populate_response_error(error: str, state: RenderState) -> list[str]:
-    padding = X_PADDING * 2
-    quarter = math.floor(state.size.columns / 4)
-    width = state.size.columns - (quarter + (padding + 1))
+    offset, _ = calculate_rr_offset(state)
+    width, _ = calculate_rr_size(state)
+    width = width - offset
+
     content = []
     for line in error.splitlines():
         content += break_line_width(width, line)
@@ -571,11 +619,13 @@ def update_scroll(state: RenderState, increase: bool) -> RenderState:
             state.scroll.response = 0
             updated = update_scroll_list(state, increase)
             state.scroll.rlist = updated
+
         case Section.Request:
-            updated = update_scroll_request(state, increase)
+            updated = update_scroll_rr(state, increase)
             state.scroll.request = updated
+
         case Section.Response:
-            updated = update_scroll_response(state, increase)
+            updated = update_scroll_rr(state, increase)
             state.scroll.response = updated
 
     return state
@@ -608,55 +658,36 @@ def update_scroll_list(state: RenderState, increase: bool) -> int:
     return scroll
 
 
-def update_scroll_request(state: RenderState, increase: bool) -> int:
+def update_scroll_rr(state: RenderState, increase: bool) -> int:
     """
-    Calculates the scroll offset of the Request section,
+    Calculates the scroll offset of the request/response section,
     increasing/decresing only if the request definition
     is greater than the section height.
 
-    Returns an integer representing the request section
-    scroll offset.
+    Returns an integer representing the offset.
     """
-    height = math.floor((state.size.lines - X_PADDING) / 2)
-    adj_height = height - Y_OFFSET - 1
-    scroll = state.scroll.request
+    _, height = calculate_rr_size(state)
+    _, offset = calculate_rr_offset(state)
+    height = height - offset
 
-    if len(state.definition) < adj_height:
-        return scroll
+    section = state.active
+    if section == Section.Request:
+        scroll = state.scroll.request
+        length = len(state.definition)
+    else:
+        scroll = state.scroll.response
+        length = len(state.response)
+
+    # if length < height:
+    #     return length
 
     if increase:
-        if scroll < len(state.definition) - adj_height:
-            scroll += 1
+        # if scroll < length - height:
+        scroll += 1
     elif scroll > 0:
         scroll -= 1
 
-    return scroll
-
-
-def update_scroll_response(state: RenderState, increase: bool) -> int:
-    """
-    Calculates the scroll offset of the Response section,
-    increasing/decresing only if the response is greater
-    than the section height.
-
-    Returns an integer representing the response section
-    scroll offset.
-    """
-    height = math.floor((state.size.lines - X_PADDING) / 2)
-    adjustment = 2
-    adj_height = height - adjustment
-    scroll = state.scroll.response
-
-    if len(state.response) < adj_height:
-        return scroll
-
-    if increase:
-        if scroll < len(state.response) - adj_height:
-            scroll += 1
-    elif scroll > 0:
-        scroll -= 1
-
-    return scroll
+    return length
 
 
 def update_request_animation(state: RenderState) -> int:
@@ -671,9 +702,9 @@ def populate_request_definition(state: RenderState) -> list[str]:
     Pre-populate the renderable lines of the selected request
     definition to allow for easy scroll functionality.
     """
-    padding = X_PADDING * 2
-    quarter = math.floor(state.size.columns / 4)
-    width = state.size.columns - (quarter + (padding + 1))
+    width, _ = calculate_rr_size(state)
+    offset, _ = calculate_rr_offset(state)
+    width = width - offset
 
     lines = []
     request = state.requests[state.selected]
@@ -695,13 +726,22 @@ def populate_request_definition(state: RenderState) -> list[str]:
 
 
 def render(state: RenderState, resize: bool) -> None:
+    """
+    Main render function
+    """
     if resize:
         clear_screen()
 
     render_header(state)
-    render_list(state)
-    render_request(state)
-    render_response(state)
+    match state.expanded:
+        case Expanded.Main:
+            render_list(state)
+            render_request(state)
+            render_response(state)
+        case Expanded.Request:
+            render_request(state)
+        case Expanded.Response:
+            render_response(state)
     print("")
 
     if state.args.debug:
@@ -811,45 +851,59 @@ def render_request(state: RenderState) -> None:
     │ ...                │
     ╰────────────────────╯
     """
-    height = math.floor((state.size.lines - X_PADDING) / 2)
+    width, height = calculate_rr_size(state)
+    x_offset, y_offset = calculate_rr_offset(state)
 
-    offset = 2
-    padding = X_PADDING * 2
-    quarter = math.floor(state.size.columns / 4)
-    width = state.size.columns - (quarter + (padding + 1))
+    top, bottom = get_top_bottom_borders(state, width - x_offset)
+    scroll = state.scroll.response
 
-    top, bottom = get_top_bottom_borders(state, width)
-
-    color = state.theme.active_color       \
-        if state.active == Section.Request \
+    color = state.theme.active_color        \
+        if state.active == Section.Request  \
         else state.theme.border_color
 
-    set_cursor(quarter + padding, Y_OFFSET + 1)
+    if state.expanded == Expanded.Main:
+        scalar_x = math.floor(state.size.columns / 4)
+        scalar_y = 2
+    else:
+        scalar_x = 0
+        scalar_y = 0
+
     set_foreground(color, state.args.color_mode)
+    set_cursor(scalar_x + x_offset, scalar_y + y_offset)
     print(top, end="")
 
-    set_cursor(quarter + padding + offset, Y_OFFSET + 1)
+    # Magic 2 represents offset for section title
+    set_cursor(scalar_x + x_offset + 2, scalar_y + y_offset)
     set_foreground(state.theme.text_color, state.args.color_mode)
-    print(" Request ", end="")
-    set_foreground(color, state.args.color_mode)
-    scroll = state.scroll.request
+    print(" Response ", end="")
 
-    for index in range(height - Y_OFFSET - 1):
+    set_foreground(color, state.args.color_mode)
+    for index in range(height - y_offset):
         line = f"{state.borders['v_border']}"
-        if len(state.definition) > index:
-            row = state.definition[index + scroll]
-            row = cap_line_width(width, str(row))
+        definition = state.definition
+        if definition is not None and len(definition) > index:
+            row = definition[index + scroll]
+            row = cap_line_width(width - x_offset, str(row))
             line += get_foreground(state.theme.text_color,
                                    state.args.color_mode)
-            line += f"{row}{' ' * (width - len(row))}"
+            line += f"{row}{' ' * (width - x_offset - len(row))}"
             line += get_foreground(color, state.args.color_mode)
         else:
-            line += " " * (width)
+            line += " " * (width - x_offset)
+
         line += state.borders["v_border"]
-        set_cursor(quarter + padding, Y_OFFSET + index + offset)
+        set_cursor(scalar_x + x_offset,
+                   scalar_y + index + y_offset + 1)
+
         print(line, end="")
 
-    set_cursor(quarter + padding, height + 1)
+    if state.expanded == Expanded.Main:
+        # Magic 1 is to account for math.floor
+        set_cursor(scalar_x + x_offset,
+                   scalar_y + height - 1)
+    else:
+        set_cursor(x_offset, height)
+
     print(bottom, end="")
 
 
@@ -863,46 +917,58 @@ def render_response(state: RenderState) -> None:
     │                    │
     ╰────────────────────╯
     """
-    height = math.floor((state.size.lines - X_PADDING) / 2)
+    width, height = calculate_rr_size(state)
+    x_offset, y_offset = calculate_rr_offset(state)
 
-    offset = 2
-    padding = X_PADDING * 2
-    quarter = math.floor(state.size.columns / 4)
-    width = state.size.columns - (quarter + (padding + 1))
-
-    top, bottom = get_top_bottom_borders(state, width)
+    top, bottom = get_top_bottom_borders(state, width - x_offset)
+    scroll = state.scroll.response
 
     color = state.theme.active_color        \
         if state.active == Section.Response \
         else state.theme.border_color
 
-    set_cursor(quarter + padding, height + 2)
+    if state.expanded == Expanded.Main:
+        scalar_x = math.floor(state.size.columns / 4)
+        scalar_y = height
+    else:
+        scalar_x = 0
+        scalar_y = 0
+
     set_foreground(color, state.args.color_mode)
+    set_cursor(scalar_x + x_offset, scalar_y + y_offset)
     print(top, end="")
 
-    set_cursor(quarter + padding + offset, height + 2)
+    # Magic 2 represents offset for section title
+    set_cursor(scalar_x + x_offset + 2, scalar_y + y_offset)
     set_foreground(state.theme.text_color, state.args.color_mode)
     print(" Response ", end="")
-    set_foreground(color, state.args.color_mode)
-    scroll = state.scroll.response
 
-    for index in range(height - 2):
+    set_foreground(color, state.args.color_mode)
+    for index in range(height - y_offset):
         line = f"{state.borders['v_border']}"
         response = state.response
         if response is not None and len(response) > index:
             row = response[index + scroll]
-            row = cap_line_width(width, str(row))
+            row = cap_line_width(width - x_offset, str(row))
             line += get_foreground(state.theme.text_color,
                                    state.args.color_mode)
-            line += f"{row}{' ' * (width - len(row))}"
+            line += f"{row}{' ' * (width - x_offset - len(row))}"
             line += get_foreground(color, state.args.color_mode)
         else:
-            line += " " * (width)
+            line += " " * (width - x_offset)
+
         line += state.borders["v_border"]
-        set_cursor(quarter + padding, height + index + offset + 1)
+        set_cursor(scalar_x + x_offset,
+                   scalar_y + index + y_offset + 1)
+
         print(line, end="")
 
-    set_cursor(quarter + padding, (height * 2) + 1)
+    if state.expanded == Expanded.Main:
+        # Magic 1 is to account for math.floor
+        set_cursor(scalar_x + x_offset,
+                   scalar_y + height + 1)
+    else:
+        set_cursor(x_offset, height)
     print(bottom, end="")
 
 
@@ -944,6 +1010,32 @@ def render_await_request(state: RenderState) -> None:
     print(line)
 
 
+def calculate_rr_size(state: RenderState) -> (int, int):
+    """
+    Returns the width and height for the request/response
+    sections, accounting for expanded state.
+    """
+    if state.expanded == Expanded.Main:
+        quarter = math.floor(state.size.columns / 4)
+        width = state.size.columns - 1 - quarter
+        height = height = math.floor(state.size.lines / 2) - 1
+    else:
+        width = state.size.columns - 2
+        height = state.size.lines - 1
+    return (width, height)
+
+
+def calculate_rr_offset(state: RenderState) -> (int, int):
+    """
+    Returns the x_offset and y_offset for the request/response
+    sections, accounting for expanded state.
+    """
+    if state.expanded == Expanded.Main:
+        return (4, 2)
+    else:
+        return (2, 4)
+
+
 def get_top_bottom_borders(state: RenderState, width: int) -> (str, str):
     top = f"{state.borders['lt_corner']}" +        \
           f"{state.borders['h_border'] * width}" + \
@@ -964,6 +1056,7 @@ def cap_line_width(max_w: int, line: str) -> str:
     if len(str(line)) > max_w:
         capped = str(line)[:max_w - 2]  # Length of ..
         capped = capped + ".."
+
         line = capped
     return line
 
@@ -974,7 +1067,7 @@ def break_line_width(max_w: int, line: str) -> list[str]:
     a provided width, indenting the broken peices.
     """
     line = str(line)
-    if len(line) <= max_w:
+    if len(str(line)) < max_w:
         return [line]
 
     offset = 0
@@ -987,7 +1080,7 @@ def break_line_width(max_w: int, line: str) -> list[str]:
         result.append(f"{indent}{sample[offset:offset + max_w - len(indent)]}")
         offset += max_w - len(indent)
 
-    if len(line) % max_w != 0:
+    if len(line) % (max_w + 2) != 0:
         result.append(f"{indent}{sample[offset:]}")
 
     return result
