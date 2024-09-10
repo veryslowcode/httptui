@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 
 class HttpMethod(Enum):
+    # HttpMethod {{{
     GET = "GET"
     PUT = "PUT"
     POST = "POST"
@@ -10,26 +11,32 @@ class HttpMethod(Enum):
     PATCH = "PATCH"
     DELETE = "DELETE"
     OPTIONS = "OPTIONS"
+    # }}}
 
 
 class HttpBodyType(Enum):
+    # HttpBodyType {{{
     textplain = "text/plain"
     json = "application/json"
     multipartformdata = "multipart/form-data"
     xwwwformurlencoded = "application/x-www-form-urlencoded"
+    # }}}
 
 
 @dataclass
 class HttpBody():
+    # HttpBody {{{
     body_type: HttpBodyType
     body: str
 
     def __str__(self) -> str:
         return self.body
+    # }}}
 
 
 @dataclass
 class HttpRequest():
+    # HttpRequest {{{
     url: str
     headers: dict
     version: float
@@ -42,3 +49,4 @@ class HttpRequest():
         headers = f"{self.headers}\n" if self.headers else ""
         body = f"{self.body}\n" if self.body is not None else ""
         return self.name + metadata + headers + body
+    # }}}

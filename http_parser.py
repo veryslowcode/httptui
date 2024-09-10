@@ -7,15 +7,18 @@ import re
 
 # Extremely simple state machine
 class ParserState(Enum):
+    # ParserState {{{
     METADATA = 0  # [HTTP Method] [URL] [HTTP Version]
     HEADERS = 1   # [Header Key]: [Header Value]
     BODY = 2      # [Request Body]
+    # }}}
 
 
 def parse_http_file(path: str) -> list[HttpRequest]:
     """
     Primary function to parse an http (.http) file
     """
+    # parse_http_file {{{
     assert path.split(".")[-1] == "http", "File must be of type http"
 
     file = Path(path)
@@ -89,57 +92,7 @@ def parse_http_file(path: str) -> list[HttpRequest]:
             requests.append(c_req)
 
     return requests
-
-
-def _populate_variables(line: str, variables: dict) -> dict:
-    """
-    Counts anything with prefixed with a @ as a variable
-    """
-    split = line.split("=")
-    key = split[0].replace("@", "")
-    value = split[1].rstrip()
-    variables[key] = value
-    return variables
-
-
-def _replace_variables(line: str, variables: dict) -> str:
-    """
-    Replaces anything with contained in {{...}}
-    """
-    matches = re.findall("{{[a-zA-Z0-9-_]+}}", line)
-
-    if len(matches) > 0:
-        for match in matches:
-            key = match.replace("{", "")
-            key = key.replace("}", "")
-
-            value = variables.get(key)
-            if value is None:
-                raise Exception(f"Variable {key} not defined")
-
-            line = line.replace(match, value)
-
-    return line
-
-
-def _populate_metadata(line: str, request: HttpRequest) -> HttpRequest:
-    # [HTTP Method] [URL] [HTTP Version]
-    split = line.split(" ")
-    request.method = (HttpMethod)(split[0].upper())
-    request.url = split[1]
-    request.version = (float)(split[2])
-    return request
-
-
-def _populate_headers(line: str, request: HttpRequest) -> HttpRequest:
-    """
-    Responsible for [Header Key]: [Header Value] portion of http file
-    """
-    split = line.split(":")
-    key = split[0].strip()
-    value = split[1].strip()
-    request.headers[key] = value
-    return request
+    # }}}
 
 
 def _handle_headers_blank(request: HttpRequest, requests: list[HttpRequest],
@@ -149,6 +102,7 @@ def _handle_headers_blank(request: HttpRequest, requests: list[HttpRequest],
     of the parsing state machine. This determines if the next block
     should be another http request or the body of the current request
     """
+    # _handle_headers_blank {{{
     result = {
         "state": state,
         "request": request,
@@ -177,6 +131,7 @@ def _handle_headers_blank(request: HttpRequest, requests: list[HttpRequest],
         result["state"] = ParserState.BODY
 
     return result
+    # }}}
 
 
 def _populate_body(body: str, request: HttpRequest) -> HttpRequest:
@@ -185,6 +140,7 @@ def _populate_body(body: str, request: HttpRequest) -> HttpRequest:
     This function also performs the validation of the body based
     on the Content-Type header
     """
+    # _populate_body {{{
     body_type = request.body.body_type
 
     if body_type == HttpBodyType.textplain:
@@ -205,6 +161,66 @@ def _populate_body(body: str, request: HttpRequest) -> HttpRequest:
         raise NotImplementedError
 
     return request
+    # }}}
+
+
+def _populate_headers(line: str, request: HttpRequest) -> HttpRequest:
+    """
+    Responsible for [Header Key]: [Header Value] portion of http file
+    """
+    # _populate_headers {{{
+    split = line.split(":")
+    key = split[0].strip()
+    value = split[1].strip()
+    request.headers[key] = value
+    return request
+    # }}}
+
+
+def _populate_metadata(line: str, request: HttpRequest) -> HttpRequest:
+    # [HTTP Method] [URL] [HTTP Version]
+    # _populate_metadata {{{
+    split = line.split(" ")
+    request.method = (HttpMethod)(split[0].upper())
+    request.url = split[1]
+    request.version = (float)(split[2])
+    return request
+    # }}}
+
+
+def _populate_variables(line: str, variables: dict) -> dict:
+    """
+    Counts anything with prefixed with a @ as a variable
+    """
+    # _populate_variables {{{
+    split = line.split("=")
+    key = split[0].replace("@", "")
+    value = split[1].rstrip()
+    variables[key] = value
+    return variables
+    # }}}
+
+
+def _replace_variables(line: str, variables: dict) -> str:
+    """
+    Replaces anything with contained in {{...}}
+    """
+    # _replace_variables {{{
+    matches = re.findall("{{[a-zA-Z0-9-_]+}}", line)
+
+    if len(matches) > 0:
+        for match in matches:
+            key = match.replace("{", "")
+            key = key.replace("}", "")
+
+            value = variables.get(key)
+            if value is None:
+                raise Exception(f"Variable {key} not defined")
+
+            line = line.replace(match, value)
+
+    return line
+    # }}}
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@ import ctypes
 
 
 class KeyCodes(Enum):
+    # KeyCodes {{{
     SPACE = "\x20"
     QUIT = "\x11"
     UP = "k"
@@ -11,6 +12,7 @@ class KeyCodes(Enum):
     LEFT = "h"
     RIGHT = "l"
     EXPAND = "e"
+    # }}}
 
 
 # Input Constants
@@ -25,7 +27,7 @@ ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
 
 
 def initialize() -> (ctypes.c_long, ctypes.c_long):
-    '''
+    """
     In certain environments, this function may not
     be needed, such as running PowerShell in Windows
     Terminal. In other situations, such as running
@@ -33,7 +35,8 @@ def initialize() -> (ctypes.c_long, ctypes.c_long):
     characters to function properly.
 
     Returns (output, input)
-    '''
+    """
+    # initialize {{{
     kernel = ctypes.windll.kernel32
     stdin = kernel.GetStdHandle(STD_INPUT_HANDLE)
     stdout = kernel.GetStdHandle(STD_OUTPUT_HANDLE)
@@ -52,16 +55,19 @@ def initialize() -> (ctypes.c_long, ctypes.c_long):
             ENABLE_VIRTUAL_TERMINAL_PROCESSING
     )
     return (ostate, istate)
+    # }}}
 
 
 def reset(ostate: ctypes.c_long, istate: ctypes.c_long) -> None:
-    '''
+    """
     Though not strictly necessary, this function is used as a
     means to ensure the user's terminal is returned to the
     way it was before using this application.
-    '''
+    """
+    # reset {{{
     kernel = ctypes.windll.kernel32
     stdin = kernel.GetStdHandle(STD_INPUT_HANDLE)
     stdout = kernel.GetStdHandle(STD_OUTPUT_HANDLE)
     kernel.SetConsoleMode(stdin, istate)
     kernel.SetConsoleMode(stdout, ostate)
+    # }}}
