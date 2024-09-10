@@ -569,6 +569,7 @@ def handle_bus_event(message: Message, state: RenderState
     # handle_bus_event {{{
     global global_request
     resizeflag = False
+    updateflag = False
     if not state.await_request.waiting:
         updateflag = True
 
@@ -623,10 +624,13 @@ def handle_bus_event(message: Message, state: RenderState
                 resizeflag = True
 
             case Message.AwaitRequest:
-                state.response = []
-                state.await_request.error = None
-                state.await_request.waiting = True
-                state.await_request.response = None
+                if state.expanded != Expanded.Main:
+                    return (state, False, False)
+                else:
+                    state.response = []
+                    state.await_request.error = None
+                    state.await_request.waiting = True
+                    state.await_request.response = None
 
     else:
         match message:
@@ -887,14 +891,16 @@ def render_await_request(state: RenderState) -> None:
     ╰────────────────────╯
     """
     # render_await_request {{{
-    quarter = math.floor(state.size.columns / 4)
-    height = math.floor((state.size.lines - X_PADDING) / 2)
-    middle = math.floor(state.size.columns / 2) + math.floor(quarter / 2)
+    width, height = calculate_rr_size(state)
+    x_offset, y_offset = calculate_rr_size(state)
+    width += x_offset
 
-    x_pos = middle
-    y_pos = height + math.floor(height / 2)
+    scalar_x = math.floor(math.floor(state.size.columns / 4) / 2)
 
-    set_cursor(x_pos, y_pos)
+    x_middle = math.floor(width / 2) - scalar_x
+    y_middle = math.floor(height + y_offset / 2)
+
+    set_cursor(x_middle, y_middle)
     small = "·"
     large = "•"
 
