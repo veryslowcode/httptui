@@ -469,6 +469,8 @@ def handle_bus_event(message: Message, state: RenderState
                     state.expanded = Expanded.Request
                 elif state.active == Section.Response:
                     state.expanded = Expanded.Response
+                else:
+                    return (state, False, False)
 
                 state.definition = populate_request_definition(state)
 
@@ -678,16 +680,21 @@ def update_scroll_rr(state: RenderState, increase: bool) -> int:
         scroll = state.scroll.response
         length = len(state.response)
 
-    # if length < height:
-    #     return length
+    if length < height:
+        return scroll
+
+    if state.expanded != Expanded.Main:
+        scalar_y = offset
+    else:
+        scalar_y = 0
 
     if increase:
-        # if scroll < length - height:
-        scroll += 1
+        if scroll < length - (height - scalar_y):
+            scroll += 1
     elif scroll > 0:
         scroll -= 1
 
-    return length
+    return scroll
 
 
 def update_request_animation(state: RenderState) -> int:
@@ -855,7 +862,7 @@ def render_request(state: RenderState) -> None:
     x_offset, y_offset = calculate_rr_offset(state)
 
     top, bottom = get_top_bottom_borders(state, width - x_offset)
-    scroll = state.scroll.response
+    scroll = state.scroll.request
 
     color = state.theme.active_color        \
         if state.active == Section.Request  \
@@ -881,7 +888,7 @@ def render_request(state: RenderState) -> None:
     for index in range(height - y_offset):
         line = f"{state.borders['v_border']}"
         definition = state.definition
-        if definition is not None and len(definition) > index:
+        if definition is not None and len(definition) > (index + scroll):
             row = definition[index + scroll]
             row = cap_line_width(width - x_offset, str(row))
             line += get_foreground(state.theme.text_color,
@@ -947,7 +954,7 @@ def render_response(state: RenderState) -> None:
     for index in range(height - y_offset):
         line = f"{state.borders['v_border']}"
         response = state.response
-        if response is not None and len(response) > index:
+        if response is not None and len(response) > (index + scroll):
             row = response[index + scroll]
             row = cap_line_width(width - x_offset, str(row))
             line += get_foreground(state.theme.text_color,
@@ -1145,6 +1152,8 @@ def set_cursor(x: int, y: int) -> None:
 
 
 def _render_debug(state: RenderState) -> None:
+    width, height = calculate_rr_size(state)
+
     debug = \
         f"wid {state.size.columns} hgt {state.size.lines} | " + \
         f"act {state.active.value} | sel {state.selected} | " + \
