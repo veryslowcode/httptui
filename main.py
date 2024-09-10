@@ -432,8 +432,8 @@ def break_line_width(max_w: int, line: str) -> list[str]:
     a provided width, indenting the broken peices.
     """
     # break_line_width {{{
-    line = str(line)
-    if len(str(line)) < max_w:
+    line = str(line).rstrip()
+    if len(line) < max_w:
         return [line]
 
     offset = 0
@@ -604,10 +604,16 @@ def handle_bus_event(message: Message, state: RenderState
 
             case Message.Expand:
                 if state.expanded != Expanded.Main:
+                    state.scroll.request = 0
+                    state.scroll.response = 0
                     state.expanded = Expanded.Main
                 elif state.active == Section.Request:
+                    state.scroll.request = 0
+                    state.scroll.response = 0
                     state.expanded = Expanded.Request
                 elif state.active == Section.Response:
+                    state.scroll.request = 0
+                    state.scroll.response = 0
                     state.expanded = Expanded.Response
                 else:
                     return (state, False, False)
