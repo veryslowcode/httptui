@@ -580,10 +580,16 @@ def handle_bus_event(message: Message, state: RenderState
                 state = update_scroll(state, True)
 
             case Message.MoveLeft:
-                state.active = update_active(state, False)
+                if state.expanded == Expanded.Main:
+                    state.active = update_active(state, False)
+                else:
+                    updateflag = False
 
             case Message.MoveRight:
-                state.active = update_active(state, True)
+                if state.expanded == Expanded.Main:
+                    state.active = update_active(state, True)
+                else:
+                    updateflag = False
 
             case Message.Expand:
                 if state.expanded != Expanded.Main:
@@ -764,9 +770,9 @@ def populate_response(response: requests.Response,
         line = f"{key}: {value}"
         lines = break_line_width(width, line)
         content += lines
-    content.append("")
 
     if response.text != "":
+        content.append("")  # Additional separation after headers
         content.append("Body:")
         for line in response.text.splitlines():
             content += break_line_width(width, line)
@@ -795,9 +801,9 @@ def populate_request_definition(state: RenderState) -> list[str]:
         lines.append("Headers:")
         for key, value in request.headers.items():
             lines += break_line_width(width, f"{key}: {value}")
-        lines.append("")  # Additional separation after headers
 
     if request.body is not None:
+        lines.append("")  # Additional separation after headers
         lines.append("Body:")
         lines += break_line_width(width, request.body.body)
 
@@ -1294,13 +1300,15 @@ def update_scroll_rr(state: RenderState, increase: bool) -> int:
     if length < height:
         return scroll
 
-    if state.expanded != Expanded.Main:
-        scalar_y = offset
-    else:
-        scalar_y = 0
+    scalar_y = 0
+    if state.expanded == Expanded.Main:
+        if state.active == Section.Response:
+            scalar_y = -1
+        else:
+            scalar_y = 1
 
     if increase:
-        if scroll < length - (height - scalar_y):
+        if scroll <= length - (height - scalar_y):
             scroll += 1
     elif scroll > 0:
         scroll -= 1
