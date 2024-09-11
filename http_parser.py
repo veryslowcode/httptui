@@ -211,7 +211,7 @@ def _populate_host(line: str, request: HttpRequest) -> HttpRequest:
     """
     # _populate_host {{{
     host = line.split("Host:")
-    request.host = host[1]
+    request.host = host[1].strip()
     return request
     # }}}
 
@@ -224,7 +224,7 @@ def _populate_metadata(line: str, request: HttpRequest) -> HttpRequest:
     # _populate_metadata {{{
     split = line.split(" ")
     request.method = (HttpMethod)(split[0].upper())
-    request.path = split[1]
+    request.path = split[1].strip()
     if len(split) > 2:
         request.version = split[2]
     else:

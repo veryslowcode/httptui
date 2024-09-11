@@ -1,5 +1,6 @@
 import sys
 import math
+import json
 import time
 import shutil
 import signal
@@ -353,7 +354,7 @@ def _send_request(request: HttpRequest, bus: Queue) -> None:
             case HttpBodyType.xwwwformurlencoded:
                 data = request.body.body
             case HttpBodyType.json:
-                djson = request.body.body
+                djson = json.loads(request.body.body)
             case HttpBodyType.multipartformdata:
                 file = request.body.body
 
