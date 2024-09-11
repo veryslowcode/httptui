@@ -9,8 +9,9 @@ import re
 class ParserState(Enum):
     # ParserState {{{
     METADATA = 0  # [HTTP Method] [URL] [HTTP Version]
-    HEADERS = 1   # [Header Key]: [Header Value]
-    BODY = 2      # [Request Body]
+    HOST = 1      # Host: [Host]
+    HEADERS = 2   # [Header Key]: [Header Value]
+    BODY = 3      # [Request Body]
     # }}}
 
 
@@ -31,7 +32,7 @@ def parse_http_file(path: str) -> list[HttpRequest]:
         assert o_file.readable(), f"File [{path}] not readable"
 
         # Initial state for the machine
-        c_req = HttpRequest("", {}, 1.1, None, HttpMethod.GET)
+        c_req = HttpRequest("", "", {}, "HTTP/1.1", None, HttpMethod.GET)
         c_state = ParserState.METADATA
         c_body = ""  # Body will just be a string, but will be validated
 
@@ -55,6 +56,11 @@ def parse_http_file(path: str) -> list[HttpRequest]:
 
                 line = _replace_variables(line, variables)
                 c_req = _populate_metadata(line, c_req)
+                c_state = ParserState.HOST
+
+            elif c_state == ParserState.HOST:
+                line = _replace_variables(line, variables)
+                c_req = _populate_host(line, c_req)
                 c_state = ParserState.HEADERS
 
             elif c_state == ParserState.HEADERS:
@@ -69,15 +75,35 @@ def parse_http_file(path: str) -> list[HttpRequest]:
                     c_req = _populate_headers(line, c_req)
 
             elif c_state == ParserState.BODY:
-                if line.strip() == "":
+                if c_req.body.body_type != HttpBodyType.multipartformdata \
+                        and line.strip() == "":
                     # Validation step of request body
                     c_req = _populate_body(c_body, c_req)
                     requests.append(c_req)
                     # Reset state
                     c_body = ""
                     c_state = ParserState.METADATA
-                    c_req = HttpRequest("", {}, 1.1, None,
+                    c_req = HttpRequest("", "", {}, "HTTP/1.1", None,
                                         HttpMethod.GET)
+                elif c_req.body.body_type == HttpBodyType.multipartformdata:
+                    boundary = c_req.headers   \
+                        .get("Content-Type")   \
+                        .split("boundary=")[1] \
+                        .replace("\"", "")
+
+                    if f"--{boundary}--" in line:
+                        # Validation step of request body
+                        c_body += line
+                        c_req = _populate_body(c_body, c_req)
+                        requests.append(c_req)
+                        # Reset state
+                        c_body = ""
+                        c_state = ParserState.METADATA
+                        c_req = HttpRequest("", "", {}, "HTTP/1.1", None,
+                                            HttpMethod.GET)
+                    else:
+                        line = _replace_variables(line, variables)
+                        c_body += line
                 else:
                     line = _replace_variables(line, variables)
                     c_body += line
@@ -86,7 +112,7 @@ def parse_http_file(path: str) -> list[HttpRequest]:
             # Validation step of request body
             c_req = _populate_body(c_body, c_req)
 
-        if c_req.url.strip() != "":
+        if c_req.path.strip() != "":
             # Subtle check to ensure misc. line, such as comment
             # is not counted as actual request
             requests.append(c_req)
@@ -116,7 +142,7 @@ def _handle_headers_blank(request: HttpRequest, requests: list[HttpRequest],
         result["requests"].append(request)
         result["state"] = ParserState.METADATA
         # Reset the request
-        result["request"] = HttpRequest("", {}, 1.1, None,
+        result["request"] = HttpRequest("", "", {}, "HTTP/1.1", None,
                                         HttpMethod.GET)
     else:
         # Body is necessary for this type of request, ensure we know
@@ -125,7 +151,10 @@ def _handle_headers_blank(request: HttpRequest, requests: list[HttpRequest],
         assert content_type is not None,      \
             "POST request requires header " + \
             "Content-Type to be set"
-        body_type = (HttpBodyType)(content_type.lower())
+        if HttpBodyType.multipartformdata.value in content_type.lower():
+            body_type = HttpBodyType.multipartformdata
+        else:
+            body_type = (HttpBodyType)(content_type.lower())
         body = HttpBody(body_type, "")
         result["request"].body = body
         result["state"] = ParserState.BODY
@@ -157,8 +186,7 @@ def _populate_body(body: str, request: HttpRequest) -> HttpRequest:
         request.body.body = body
 
     elif body_type == HttpBodyType.multipartformdata:
-        # TODO implement
-        raise NotImplementedError
+        request.body.body = body
 
     return request
     # }}}
@@ -177,6 +205,17 @@ def _populate_headers(line: str, request: HttpRequest) -> HttpRequest:
     # }}}
 
 
+def _populate_host(line: str, request: HttpRequest) -> HttpRequest:
+    """
+    Responsible for the Host: [Host] portion of the http file
+    """
+    # _populate_host {{{
+    host = line.split("Host:")
+    request.host = host[1]
+    return request
+    # }}}
+
+
 def _populate_metadata(line: str, request: HttpRequest) -> HttpRequest:
     """
     Responsible for the [HTTP Method] [URL] [HTTP Version] portion of the
@@ -185,11 +224,11 @@ def _populate_metadata(line: str, request: HttpRequest) -> HttpRequest:
     # _populate_metadata {{{
     split = line.split(" ")
     request.method = (HttpMethod)(split[0].upper())
-    request.url = split[1]
+    request.path = split[1]
     if len(split) > 2:
-        request.version = (float)(split[2])
+        request.version = split[2]
     else:
-        request.version = 1.1
+        request.version = "HTTP/1.1"
     return request
     # }}}
 

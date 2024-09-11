@@ -1,12 +1,15 @@
-@getUrl=https://example.com/api/
-@version=1.1
+@host=https://example.com
+@getPath=/api
+@version=HTTP/1.1
 &ExampleGet
-GET {{getUrl}} {{version}}
+GET {{getPath}} {{version}}
+Host: {{host}}
 Accept: application/json
 
-@postUrl=https://example.com/api/create/
-&ExamplePost
-POST {{postUrl}} {{version}}
+@jsonPath=/api/create
+&JsonExample
+POST {{jsonPath}} {{version}}
+Host: {{host}}
 Content-Type: application/json
 Accept: application/json
 
@@ -14,3 +17,29 @@ Accept: application/json
     "name": "Some One",
     "email": "someone@example.com"
 }
+
+@multiPath=/api/auth
+&MultiPartFormExample
+POST {{multiPath}} {{version}}
+Host: {{host}}
+Content-Length: 122
+Content-Type: multipart/form-data;boundary="boundary"
+
+--boundary
+Content-Disposition: form-data; name="username"
+
+userone
+--boundary
+Content-Disposition: form-data; name="password"; filename="example.txt"
+
+P@$$W0rd
+--boundary--
+
+@encodedPath=/api/auth
+&EncodedExample
+POST {{encodedPath}} HTTP/1.1
+Host: {{host}}
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 40
+
+username=userone&password=P%40%24%24W0rd

@@ -37,16 +37,18 @@ class HttpBody():
 @dataclass
 class HttpRequest():
     # HttpRequest {{{
-    url: str
+    host: str
+    path: str
     headers: dict
-    version: float
+    version: str
     body: HttpBody
     method: HttpMethod
     name: str = ""   # Non-essential
 
     def __str__(self) -> str:
-        metadata = f"{self.method.value} {self.url} {self.version}\n"
+        metadata = f"{self.method.value} {self.path} {self.version}\n"
+        host = f"Host: {self.host}\n"
         headers = f"{self.headers}\n" if self.headers else ""
         body = f"{self.body}\n" if self.body is not None else ""
-        return self.name + metadata + headers + body
+        return self.name + metadata + host + headers + body
     # }}}

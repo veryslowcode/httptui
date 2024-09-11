@@ -341,10 +341,11 @@ def _send_request(request: HttpRequest, bus: Queue) -> None:
     data = None
     djson = None
 
+    url = f"{request.host}{request.path}"
     if request.body is None:
         response = requests.request(
             request.method.value.upper(),
-            request.url, headers=request.headers)
+            url, headers=request.headers)
     else:
         match request.body.body_type:
             case HttpBodyType.textplain:
@@ -357,7 +358,7 @@ def _send_request(request: HttpRequest, bus: Queue) -> None:
                 file = request.body.body
 
         response = requests.request(
-            request.method.value.upper(), request.url,
+            request.method.value.upper(), url,
             headers=request.headers, json=djson,
             data=data, files=file)
 
@@ -426,14 +427,17 @@ def _update_loop(bus: Queue, theme: Theme, args: Arguments,
     # }}}
 
 
-def break_line_width(max_w: int, line: str) -> list[str]:
+def break_line_width(max_w: int, line: str, escape=True) -> list[str]:
     """
     This breaks a line into a list of strings based on
     a provided width, indenting the broken peices.
+    The escape parameter represents a flag to
+    replace tabs with spaces.
     """
     # break_line_width {{{
     line = str(line)
-    line = line.replace("\t", "  ")
+    if escape:
+        line = line.replace("\t", "  ")
     if len(line) < max_w:
         return [line]
 
@@ -831,7 +835,11 @@ def populate_request_definition(state: RenderState) -> list[str]:
     lines = []
     request = state.requests[state.selected]
     lines.append(f"Method -> {request.method.value}")
-    lines += break_line_width(width, f"URL -> {request.url}")
+
+    lines += break_line_width(
+        width, f"Host -> {request.host}", escape=False)
+    lines += break_line_width(
+        width, f"Path -> {request.path}", escape=False)
     lines.append("")  # Additional after metadata
 
     if request.headers:
@@ -1099,7 +1107,7 @@ def render_request(state: RenderState) -> None:
     interface and styles appropriately.
     ╭─ Request ──────────╮
     │ Method -> GET      │
-    │ URL -> example.com │
+    │ Host -> sample.com │
     │ ...                │
     ╰────────────────────╯
     """
@@ -1128,7 +1136,7 @@ def render_request(state: RenderState) -> None:
     # Magic 2 represents offset for section title
     set_cursor(scalar_x + x_offset + 2, scalar_y + y_offset)
     set_foreground(state.theme.text_color, state.args.color_mode)
-    print(" Response ", end="")
+    print(" Request ", end="")
 
     set_foreground(color, state.args.color_mode)
     for index in range(height - y_offset):
