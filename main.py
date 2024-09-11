@@ -433,6 +433,7 @@ def break_line_width(max_w: int, line: str) -> list[str]:
     """
     # break_line_width {{{
     line = str(line)
+    line = line.replace("\t", "  ")
     if len(line) < max_w:
         return [line]
 
