@@ -566,7 +566,7 @@ def format_multipart_body(request: HttpRequest) -> dict:
                     .strip()                         \
                     .replace("\"", "")
             elif line.strip() != "" and line.strip() != "--":
-                pairs[current_key] = line.strip()
+                pairs[current_key] = (None, line.strip())
 
     return pairs
     # }}}
