@@ -342,6 +342,7 @@ def _send_request(request: HttpRequest, bus: Queue) -> None:
     data = None
     djson = None
 
+    headers = request.headers.copy()
     url = f"{request.host}{request.path}"
     if request.body is None:
         response = requests.request(
@@ -356,11 +357,14 @@ def _send_request(request: HttpRequest, bus: Queue) -> None:
             case HttpBodyType.json:
                 djson = json.loads(request.body.body)
             case HttpBodyType.multipartformdata:
-                file = request.body.body
+                if headers.get("Content-Length") is not None:
+                    headers.pop("Content-Length")
+                headers.pop("Content-Type")
+                file = format_multipart_body(request)
 
         response = requests.request(
             request.method.value.upper(), url,
-            headers=request.headers, json=djson,
+            headers=headers, json=djson,
             data=data, files=file)
 
     global_response = response
@@ -523,6 +527,48 @@ def disable_buffer() -> None:
     """
     # disable_buffer {{{
     print(f"{CSI}{DIS_ALT_BUF}")
+    # }}}
+
+
+def format_multipart_body(request: HttpRequest) -> dict:
+    """
+    Given a request, this function extracts the key-value
+    pairs from the body of a multipart/form-data request,
+    returning a dictionary of those pairs.
+
+    It expects the request body to be in the following format:
+
+    --boundary
+    Content-Disposition: form-data; name="key"
+
+    value
+    --boundary--
+    """
+    # format_multipart_body {{{
+    boundary = request.headers \
+        .get("Content-Type")   \
+        .split("boundary=")[1] \
+        .replace("\"", "")
+
+    pairs = {}
+    split = request.body.body.split(f"--{boundary}")
+    for section in split:
+        if section == "" or section == "--":
+            continue
+
+        current_key = ""
+        content = section.splitlines()
+        for line in content:
+            if line.strip() == "" or line.strip == "--":
+                continue
+            elif "Content-Disposition" in line:
+                current_key = line.split("name=")[1] \
+                    .strip()                         \
+                    .replace("\"", "")
+            elif line.strip() != "" and line.strip() != "--":
+                pairs[current_key] = line.strip()
+
+    return pairs
     # }}}
 
 
