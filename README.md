@@ -1,8 +1,41 @@
 # HTTP/TUI
 
-TUI application for storing and sending HTTP requests.
+TUI application for storing and sending HTTP requests
+without the need to leave your terminal. The interface
+and input event system is built from scratch, with the
+only dependencies being those related to the `requests`
+package.
+
+![Demo](demo.png)
+
+## Operating System Support
+
+This application should work on the *big three*
+(i.e., Linux, MacOS, Windows).
+
+## Build Requirements
+python >= v3.12.x
 
 ## Usage
+
+### Keyboard Input
+
+```sh
+`h`         # Select section to the left
+`l`         # Select section to the right
+`j`         # Select/Scroll down
+`k`         # Select/Scroll up
+`Ctrl + q`  # Quits the application
+
+# Only applicable to request
+# and response sections.
+`e`         # Expand section
+
+# Used when not in expanded mode
+`space`     # Send request
+```
+
+### Command Line Interface
 
 ```sh
 usage: main.py [-h] [-t THEME] [-m MODE] [-b BORDER] [-f FILE]
@@ -25,8 +58,9 @@ This application follows a `.http` file format almost the same
 as the one described in the following
 [Microsoft Documentation](https://learn.microsoft.com/en-us/aspnet/core/test/http-files?view=aspnetcore-8.0)
 
-The primary difference is this application supports the ability
-to assign a name to a given request (for display in the UI)
+Note that there are some differences, with them primary 
+one being that this application supports the ability to
+assign a name to a given request (for display in the UI)
 using the `&` character.
 
 ```sh
@@ -50,3 +84,25 @@ Use the following conventions within the `.http` file
 >Variables must be defined before a request
 >and names (optional) must be defined before
 > a request, but after variables.
+
+## HTTP Methods
+
+This application supports sending the following types of requests:
+- GET
+- PUT 
+- POST 
+- HEAD 
+- PATCH 
+- DELETE 
+- OPTIONS
+
+And the following body request body types:
+- text/plain
+- application/json
+- multipart/form-data
+- application/x-www-form-urlencoded
+
+>[!NOTE]
+> When using the multipart/form-data body type, this
+> application currently does not support sending files.
+> Support for this can easily be added in the future.
