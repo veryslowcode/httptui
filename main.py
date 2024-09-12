@@ -535,6 +535,12 @@ def enable_buffer() -> None:
     # }}}
 
 
+def get_clear_line_from_cursor() -> str:
+    # clear_line_from_cursor {{{
+    return f"{CSI}0K"
+    # }}}
+
+
 def get_foreground(color: str, mode: ColorMode) -> str:
     # get_foreground {{{
     match mode:
@@ -1156,7 +1162,10 @@ def render_request(state: RenderState) -> None:
         line += state.borders["v_border"]
         set_cursor(scalar_x + x_offset,
                    scalar_y + index + y_offset + 1)
+        print(get_clear_line_from_cursor(), end="")
 
+        set_cursor(scalar_x + x_offset,
+                   scalar_y + index + y_offset + 1)
         print(line, end="")
 
     if state.expanded == Expanded.Main:

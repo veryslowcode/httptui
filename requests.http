@@ -30,7 +30,7 @@ Content-Disposition: form-data; name="username"
 
 userone
 --boundary
-Content-Disposition: form-data; name="password"; filename="example.txt"
+Content-Disposition: form-data; name="password"
 
 P@$$W0rd
 --boundary--
@@ -42,4 +42,5 @@ Host: {{host}}
 Content-Type: application/x-www-form-urlencoded
 Content-Length: 40
 
-username=userone&password=P%40%24%24W0rd
+username=userone&password=P@$$W0rd
+
