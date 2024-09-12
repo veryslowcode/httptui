@@ -857,7 +857,7 @@ def populate_request_definition(state: RenderState) -> list[str]:
     if request.body is not None:
         lines.append("")  # Additional separation after headers
         lines.append("Body:")
-        lines += break_line_width(width, request.body.body)
+        lines += break_line_width(width, request.body.body.rstrip())
 
     return lines
     # }}}
