@@ -15,21 +15,42 @@ class ParserState(Enum):
     # }}}
 
 
-def parse_http_file(path: str) -> list[HttpRequest]:
+def parse_http_directory(path: str) -> dict:
+    """
+    Given a directory, this function obtains
+    all of the .http files and parses them by
+    calling parse_http_file.
+
+    It returns a dictionary with the name of
+    each file, as the key, and the list of
+    requests as the value.
+    """
+    # parse_http_directory {{{
+    directory = Path(path)
+    assert directory.exists(), f"No directory [{path}] found"
+    assert directory.is_dir(), f"Path not a directory [{path}]"
+
+    httpfiles = {}
+    result = directory.glob("*.http")
+
+    for item in result:
+        if item.is_file():
+            httpfiles[item.name] = parse_http_file(item)
+
+    return httpfiles
+    # }}}
+
+
+def parse_http_file(file: Path) -> list[HttpRequest]:
     """
     Primary function to parse an http (.http) file
     """
     # parse_http_file {{{
-    assert path.split(".")[-1] == "http", "File must be of type http"
-
-    file = Path(path)
-    assert file.exists(), f"No file [{path}] found"
-
     requests = []   # The actual return
     variables = {}  # Used for placeholder replacement
 
     with file.open() as o_file:
-        assert o_file.readable(), f"File [{path}] not readable"
+        assert o_file.readable(), f"File [{file}] not readable"
 
         # Initial state for the machine
         c_req = HttpRequest("", "", {}, "HTTP/1.1", None, HttpMethod.GET)
@@ -274,6 +295,7 @@ if __name__ == "__main__":
     result of a given .http file
     """
     import argparse
+    from pprint import pprint
 
     description = "Test parsing of provided HTTP file"
     parser = argparse.ArgumentParser(description=description)
@@ -281,6 +303,7 @@ if __name__ == "__main__":
     parser.add_argument("file", help=".http file to parse")
     arguments = parser.parse_args()
 
-    requests = parse_http_file(arguments.file)
+    file = Path(arguments.file)
+    requests = parse_http_file(file)
     for request in requests:
-        print(request)
+        pprint(request)

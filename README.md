@@ -25,11 +25,8 @@ python >= v3.12.x
 `l`         # Select section to the right
 `j`         # Select/Scroll down
 `k`         # Select/Scroll up
+`e`         # Expand section/directory
 `Ctrl + q`  # Quits the application
-
-# Only applicable to request
-# and response sections.
-`e`         # Expand section
 
 # Used when not in expanded mode
 `space`     # Send request
@@ -38,7 +35,7 @@ python >= v3.12.x
 ### Command Line Interface
 
 ```sh
-usage: main.py [-h] [-t THEME] [-m MODE] [-b BORDER] [-f FILE]
+usage: main.py [-h] [-t THEME] [-m MODE] [-b BORDER] [-d DIRECTORY]
 
 Send and recieve HTTP request in the terminal
 
@@ -49,7 +46,8 @@ options:
   -m MODE, --mode MODE  Color style: '4bit', '8bit', or '24bit' (defaults to '24bit')
   -b BORDER, --border BORDER
                         Border style: 'single' or 'double' (defaults to 'single')
-  -f FILE, --file FILE  Path to requests file (defaults to script 'requests.http')
+  -d DIRECTORY, --directory DIRECTORY
+                        Path to requests directory (defaults to script directory)
 ```
 
 ## File Format
