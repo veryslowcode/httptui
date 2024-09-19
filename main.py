@@ -49,6 +49,7 @@ class Theme:
     border_color: int
     active_color: int
     selected_color: int
+    directory_color: int
     # }}}
 
 
@@ -612,6 +613,12 @@ def enable_buffer() -> None:
     # }}}
 
 
+def get_bold() -> str:
+    # get_bold {{{
+    return f"{CSI}1m"
+    # }}}
+
+
 def get_clear_line_from_cursor() -> str:
     # clear_line_from_cursor {{{
     return f"{CSI}0K"
@@ -711,11 +718,7 @@ def handle_bus_event(message: Message, state: RenderState
                     state.scroll.response = 0
                     current = state.requests[state.selected]
                     if current.aspect == RequestAspect.FileName:
-                        state.response = []
-                        state.await_request.error = None
-                        state.await_request.response = None
-                        expanded = state.requests[state.selected].expanded
-                        state.requests[state.selected].expanded = not expanded
+                        state = handle_directory_expand(state)
                         return (state, True, False)  # Avoid flicker
                     else:
                         return (state, False, False)
@@ -760,6 +763,21 @@ def handle_bus_event(message: Message, state: RenderState
                 updateflag = True
 
     return (state, updateflag, resizeflag)
+    # }}}
+
+
+def handle_directory_expand(state: RenderState) -> RenderState:
+    # handle_directory_expand {{{
+    state.response = []
+    state.await_request.error = None
+    state.await_request.response = None
+    expanded = state.requests[state.selected].expanded
+    state.requests[state.selected].expanded = not expanded
+
+    if expanded is True and state.scroll.rlist > 0:
+        state.scroll.rlist = recalculate_list_scroll(state)
+
+    return state
     # }}}
 
 
@@ -848,13 +866,18 @@ def parse_colors(args: Arguments) -> Theme:
         "active_request_color", cp[mode]["active_request_color"],
         args.color_mode
     )
+    directory_color = validate_colors(
+        "directory_color", cp[mode]["directory_color"],
+        args.color_mode
+    )
 
     return Theme(
         text_color=text_color,
         title_color=title_color,
         border_color=border_color,
         active_color=active_color,
-        selected_color=selected_color
+        selected_color=selected_color,
+        directory_color=directory_color
     )
     # }}}
 
@@ -970,6 +993,22 @@ def populate_response_error(error: str, state: RenderState) -> list[str]:
         content += break_line_width(width, line)
 
     return content
+    # }}}
+
+
+def recalculate_list_scroll(state: RenderState) -> int:
+    # recalculate_list_scroll {{{
+    padding = 3
+    adj_height = state.size.lines - Y_OFFSET - padding
+
+    state.selected = 0
+    state.directory = 0
+    return 0
+
+    if state.directories[-1] < adj_height:
+        return 0
+    else:
+        return state.directories[-1] - adj_height
     # }}}
 
 
@@ -1120,15 +1159,21 @@ def render_list(state: RenderState) -> None:
                     jump = True
 
                 name = cap_line_width(width, name)
-                name = f"{CSI}4m{CSI}1m{name}{CSI}22m{CSI}24m"
+                name = f"{name}{' ' * (width - len(name))}"
+
+                prefix = f"{get_bold()}"
+                suffix = f"{reset_bold()}"
+
+                name = f"{prefix}{name}{suffix}"
             else:
                 name = f" {request.item.name}" \
                     if request.item.name != "" \
                     else request.item.url
                 name = name.replace("\n", "").replace("\r", "")
+                name = f"{name}{' ' * (width - len(name))}"
                 name = cap_line_width(width, name)
 
-            line = f"{name}{' ' * (width - len(name))}"
+            line = name
         else:
             line = ' ' * width
 
@@ -1136,6 +1181,10 @@ def render_list(state: RenderState) -> None:
 
         if state.selected == virtual_index + state.scroll.rlist:
             set_foreground(state.theme.selected_color, state.args.color_mode)
+            print(line, end="")
+            set_foreground(color, state.args.color_mode)
+        elif request is not None and request.aspect == RequestAspect.FileName:
+            set_foreground(state.theme.directory_color, state.args.color_mode)
             print(line, end="")
             set_foreground(color, state.args.color_mode)
         else:
@@ -1299,6 +1348,12 @@ def render_request(state: RenderState) -> None:
         set_cursor(x_offset, height)
 
     print(bottom, end="")
+    # }}}
+
+
+def reset_bold() -> str:
+    # reset_bold {{{
+    return f"{CSI}22m"
     # }}}
 
 
