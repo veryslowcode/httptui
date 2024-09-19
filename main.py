@@ -422,9 +422,6 @@ def _update_loop(bus: Queue, theme: Theme,
         size=size, requests=requests, directories=directories
     )
 
-    # if len(requests) > 0:
-    #     state.definition = populate_request_definition(state)
-
     render(state, True)  # Ensure screen is initially cleared
 
     while True:
@@ -1525,6 +1522,10 @@ def update_selected(state: RenderState, increase: bool) -> (int, int):
                 or request.expanded:
             if current < len(state.requests) - 1:
                 current += 1
+
+                # Account for directory increase if expanded
+                if state.requests[current].aspect == RequestAspect.FileName:
+                    directory += 1
         else:
             if directory + 1 < len(state.directories):
                 directory += 1
