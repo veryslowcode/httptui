@@ -719,6 +719,7 @@ def handle_bus_event(message: Message, state: RenderState
                         state.await_request.response = None
                         expanded = state.requests[state.selected].expanded
                         state.requests[state.selected].expanded = not expanded
+                        return (state, True, False)  # Avoid flicker
                     else:
                         return (state, False, False)
 
