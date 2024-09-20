@@ -156,6 +156,8 @@ class RenderState:
     directories: list[int]
     requests:    list[DisplayRequest]
 
+    effectiveLength: int = 0
+
     selected:   int = 0
     directory:  int = 0
     active:     Section = Section.List
@@ -1001,14 +1003,29 @@ def recalculate_list_scroll(state: RenderState) -> int:
     padding = 3
     adj_height = state.size.lines - Y_OFFSET - padding
 
-    state.selected = 0
-    state.directory = 0
-    return 0
+    # if state.selected < adj_height:
+    #     return 0
 
-    if state.directories[-1] < adj_height:
-        return 0
+    length = len(state.requests)
+
+    for index in range(0, len(state.directories)):
+        directoryIndex = state.directories[index]
+
+        if state.requests[directoryIndex].expanded is False:
+            if index < len(state.directories) - 1:
+                nextIndex = state.directories[index + 1]
+            else:
+                nextIndex = len(state.requests) - 1
+            length -= (nextIndex - directoryIndex)
+
+    scroll = state.scroll.rlist
+
+    if length > adj_height:
+        scroll = length - adj_height
     else:
-        return state.directories[-1] - adj_height
+        scroll = 0
+
+    return scroll
     # }}}
 
 
