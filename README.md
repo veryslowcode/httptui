@@ -93,6 +93,8 @@ Use the following conventions within the `.http` file
 # or //  For Comments
 &        For request name
 
+$env.<VARIABLE>$ For environment variable
+
 [@name=value] For variable definition
 {{name}}      For variable usage
 ```
@@ -101,6 +103,10 @@ Use the following conventions within the `.http` file
 >Variables must be defined before a request
 >and names (optional) must be defined before
 > a request, but after variables.
+
+>[!NOTE]
+>Also note that environment variables will be
+>loaded just before a request is sent.
 
 ## HTTP Methods
 

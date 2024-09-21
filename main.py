@@ -1,3 +1,5 @@
+import re
+import os
 import sys
 import math
 import json
@@ -374,25 +376,34 @@ def _send_request(request: HttpRequest, bus: Queue) -> None:
     data = None
     djson = None
 
-    headers = request.headers.copy()
-    url = f"{request.host}{request.path}"
+    headers = {}
+    for key, value in request.headers.items():
+        key = get_env_variables(key)
+        value = get_env_variables(value)
+        headers[key] = value
+
+    url = get_env_variables(f"{request.host}{request.path}")
+
     if request.body is None:
         response = requests.request(
             request.method.value.upper(),
             url, headers=request.headers)
     else:
+        body = get_env_variables(request.body.body)
         match request.body.body_type:
             case HttpBodyType.textplain:
-                data = request.body.body
+                data = body
             case HttpBodyType.xwwwformurlencoded:
-                data = request.body.body
+                data = body
             case HttpBodyType.json:
-                djson = json.loads(request.body.body)
+                djson = json.loads(body)
             case HttpBodyType.multipartformdata:
                 if headers.get("Content-Length") is not None:
                     headers.pop("Content-Length")
                 headers.pop("Content-Type")
-                file = format_multipart_body(request)
+                m_request = request
+                m_request.body.body = body
+                file = format_multipart_body(m_request)
 
         response = requests.request(
             request.method.value.upper(), url,
@@ -620,6 +631,34 @@ def get_bold() -> str:
 def get_clear_line_from_cursor() -> str:
     # clear_line_from_cursor {{{
     return f"{CSI}0K"
+    # }}}
+
+
+def get_env_variables(input: str) -> str:
+    """
+    Given an input string, this function
+    replaces all occurences of Environment
+    variable references within the string to
+    the actual value.
+
+    Raises an exception if enironment variable is not set.
+    """
+    # get_env_variables {{{
+    regex = "\\$env.[a-zA-Z0-9-_]+\\$"
+
+    if re.search(regex, input):
+        matches = re.findall(regex, input)
+
+        for match in matches:
+            variable = match.replace("$", "").replace("env.", "")
+            value = os.getenv(variable)
+
+            if value is None:
+                raise Exception(f"Environment variable {variable} not found")
+
+            input = input.replace(match, value)
+
+    return input
     # }}}
 
 
