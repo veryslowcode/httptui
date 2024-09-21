@@ -139,9 +139,8 @@ class RequestAspect(Enum):
 @dataclass
 class DisplayRequest:
     # DisplayRequest {{{
-    aspect:   RequestAspect
-    item:     object
-    expanded: bool  # Only used for FileName aspect
+    aspect: RequestAspect
+    item:   object
     # }}}
 
 
@@ -156,10 +155,7 @@ class RenderState:
     directories: list[int]
     requests:    list[DisplayRequest]
 
-    effectiveLength: int = 0
-
     selected:   int = 0
-    directory:  int = 0
     active:     Section = Section.List
     expanded:   Expanded = Expanded.Main
     response:   list[str] = field(default_factory=list)
@@ -228,12 +224,12 @@ def _main_loop(driver: any, args: Arguments) -> None:
 
     offset = 0
     for key, value in parsed.items():
-        requests.append(DisplayRequest(RequestAspect.FileName, key, True))
+        requests.append(DisplayRequest(RequestAspect.FileName, key))
         directories.append(offset)
         offset += 1
         for request in value:
             requests.append(
-                DisplayRequest(RequestAspect.Request, request, False)
+                DisplayRequest(RequestAspect.Request, request)
             )
             offset += 1
 
@@ -675,8 +671,7 @@ def handle_bus_event(message: Message, state: RenderState
             case Message.MoveUp:
                 if state.active == Section.List:
                     state.response = []
-                    state.selected, state.directory = update_selected(state,
-                                                                      False)
+                    state.selected = update_selected(state, False)
                     state.definition = populate_request_definition(state)
                     global_request = state.requests[state.selected]
                 state = update_scroll(state, False)
@@ -684,8 +679,7 @@ def handle_bus_event(message: Message, state: RenderState
             case Message.MoveDown:
                 if state.active == Section.List:
                     state.response = []
-                    state.selected, state.directory = update_selected(state,
-                                                                      True)
+                    state.selected = update_selected(state, True)
                     state.definition = populate_request_definition(state)
                     global_request = state.requests[state.selected]
                 state = update_scroll(state, True)
@@ -703,27 +697,16 @@ def handle_bus_event(message: Message, state: RenderState
                     updateflag = False
 
             case Message.Expand:
+                state.scroll.request = 0
+                state.scroll.response = 0
                 if state.expanded != Expanded.Main:
-                    state.scroll.request = 0
-                    state.scroll.response = 0
                     state.expanded = Expanded.Main
                 elif state.active == Section.Request:
-                    state.scroll.request = 0
-                    state.scroll.response = 0
                     state.expanded = Expanded.Request
                 elif state.active == Section.Response:
-                    state.scroll.request = 0
-                    state.scroll.response = 0
                     state.expanded = Expanded.Response
                 else:
-                    state.scroll.request = 0
-                    state.scroll.response = 0
-                    current = state.requests[state.selected]
-                    if current.aspect == RequestAspect.FileName:
-                        state = handle_directory_expand(state)
-                        return (state, True, False)  # Avoid flicker
-                    else:
-                        return (state, False, False)
+                    return (state, False, False)
 
                 state.definition = populate_request_definition(state)
 
@@ -765,21 +748,6 @@ def handle_bus_event(message: Message, state: RenderState
                 updateflag = True
 
     return (state, updateflag, resizeflag)
-    # }}}
-
-
-def handle_directory_expand(state: RenderState) -> RenderState:
-    # handle_directory_expand {{{
-    state.response = []
-    state.await_request.error = None
-    state.await_request.response = None
-    expanded = state.requests[state.selected].expanded
-    state.requests[state.selected].expanded = not expanded
-
-    if expanded is True and state.scroll.rlist > 0:
-        state.scroll.rlist = recalculate_list_scroll(state)
-
-    return state
     # }}}
 
 
@@ -998,37 +966,6 @@ def populate_response_error(error: str, state: RenderState) -> list[str]:
     # }}}
 
 
-def recalculate_list_scroll(state: RenderState) -> int:
-    # recalculate_list_scroll {{{
-    padding = 3
-    adj_height = state.size.lines - Y_OFFSET - padding
-
-    # if state.selected < adj_height:
-    #     return 0
-
-    length = len(state.requests)
-
-    for index in range(0, len(state.directories)):
-        directoryIndex = state.directories[index]
-
-        if state.requests[directoryIndex].expanded is False:
-            if index < len(state.directories) - 1:
-                nextIndex = state.directories[index + 1]
-            else:
-                nextIndex = len(state.requests) - 1
-            length -= (nextIndex - directoryIndex)
-
-    scroll = state.scroll.rlist
-
-    if length > adj_height:
-        scroll = length - adj_height
-    else:
-        scroll = 0
-
-    return scroll
-    # }}}
-
-
 def render(state: RenderState, resize: bool) -> None:
     """
     Main render function
@@ -1164,17 +1101,11 @@ def render_list(state: RenderState) -> None:
     virtual_index = 0
     for index in range(height - Y_OFFSET - offset):
         set_cursor(X_OFFSET - 1, Y_OFFSET + index + offset)
-        jump = False
 
         if (len(state.requests) > virtual_index):
             request = state.requests[virtual_index + state.scroll.rlist]
             if request.aspect == RequestAspect.FileName:
-                if request.expanded:
-                    name = f"▼ {request.item}"
-                else:
-                    name = f"▲ {request.item}"
-                    jump = True
-
+                name = request.item
                 name = cap_line_width(width, name)
                 name = f"{name}{' ' * (width - len(name))}"
 
@@ -1212,17 +1143,7 @@ def render_list(state: RenderState) -> None:
         set_cursor(width + X_OFFSET, Y_OFFSET + index + offset)
         print(f"{state.borders['v_border']}", end="")
 
-        if jump:
-            for j in range(virtual_index + 1, len(state.requests)):
-                virtual_index = j
-                if state.requests[j].aspect == RequestAspect.FileName:
-                    break
-
-            # Hacky way to account for non-inclusive range
-            if state.requests[virtual_index].aspect != RequestAspect.FileName:
-                virtual_index = len(state.requests)
-        else:
-            virtual_index += 1
+        virtual_index += 1
 
     set_cursor(X_OFFSET - 1, height)
     print(bottom, end="")
@@ -1579,44 +1500,22 @@ def update_scroll_rr(state: RenderState, increase: bool) -> int:
     # }}}
 
 
-def update_selected(state: RenderState, increase: bool) -> (int, int):
+def update_selected(state: RenderState, increase: bool) -> int:
     """
     Updates the selected request, returning index.
     Should only be used when active section is List.
     """
     # update_selected {{{
     current = state.selected
-    directory = state.directory
-    request = state.requests[current]
 
     if increase:
-        if request.aspect == RequestAspect.Request \
-                or request.expanded:
-            if current < len(state.requests) - 1:
-                current += 1
-
-                # Account for directory increase if expanded
-                if state.requests[current].aspect == RequestAspect.FileName:
-                    directory += 1
-        else:
-            if directory + 1 < len(state.directories):
-                directory += 1
-                current = state.directories[directory]
-
+        if current < len(state.requests) - 1:
+            current += 1
     else:
         if current > 0:
-            if request.aspect == RequestAspect.Request:
-                current -= 1
-            else:
-                if directory - 1 >= 0:
-                    directory -= 1
-                previous = state.directories[directory]
-                if state.requests[previous].expanded:
-                    current -= 1
-                else:
-                    current = previous
+            current -= 1
 
-    return (current, directory)
+    return current
     # }}}
 
 
