@@ -25,8 +25,11 @@ python >= v3.12.x
 `l`         # Select section to the right
 `j`         # Select/Scroll down
 `k`         # Select/Scroll up
-`e`         # Expand section/directory
 `Ctrl + q`  # Quits the application
+
+# Only applicable to request
+# and response sections.
+`e`         # Expand section
 
 # Used when not in expanded mode
 `space`     # Send request
