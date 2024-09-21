@@ -411,6 +411,10 @@ def _send_request(request: HttpRequest, bus: Queue) -> None:
             data=data, files=file)
 
     global_response = response
+
+    if request.postscript is not None:
+        execute_postscript(request.postscript, response)
+
     bus.put(Message.ResponseReceived)
     # }}}
 
@@ -571,6 +575,30 @@ def disable_buffer() -> None:
     # }}}
 
 
+def enable_buffer() -> None:
+    """
+    Creates a new screen buffer
+    """
+    # enable_buffer {{{
+    print(f"{CSI}{EN_ALT_BUF}")
+    # }}}
+
+
+def execute_postscript(path: str, response: requests.Response) -> None:
+    """
+    Given a path, this function executes the
+    python script at that path.
+    """
+    # execute_postscript {{{
+    script = Path(path).expanduser()
+    assert script.exists(), f"Script {path} not found"
+    try:
+        exec(open(script).read(), sys.argv.append(response))
+    except Exception as e:
+        raise Exception(f"Error running postscript {e}")
+    # }}}
+
+
 def format_multipart_body(request: HttpRequest) -> dict:
     """
     Given a request, this function extracts the key-value
@@ -611,16 +639,6 @@ def format_multipart_body(request: HttpRequest) -> dict:
 
     return pairs
     # }}}
-
-
-def enable_buffer() -> None:
-    """
-    Creates a new screen buffer
-    """
-    # enable_buffer {{{
-    print(f"{CSI}{EN_ALT_BUF}")
-    # }}}
-
 
 def get_bold() -> str:
     # get_bold {{{

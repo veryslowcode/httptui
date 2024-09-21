@@ -45,6 +45,8 @@ class HttpRequest():
     method: HttpMethod
     name: str = ""   # Non-essential
 
+    postscript: str = None
+
     def __str__(self) -> str:
         metadata = f"{self.method.value} {self.path} {self.version}\n"
         host = f"Host: {self.host}\n"

@@ -65,7 +65,9 @@ def parse_http_file(file: Path) -> list[HttpRequest]:
             elif line[0] == "@":  # Variable definition found
                 assert c_state == ParserState.METADATA, \
                     "Variables must be defined prior to a request"
-                variables = _populate_variables(line, variables)
+                variables, postscript = _populate_variables(line, variables)
+                if postscript is not None:
+                    c_req.postscript = postscript
 
             elif c_state == ParserState.METADATA:
                 if line.strip() == "":
@@ -254,16 +256,26 @@ def _populate_metadata(line: str, request: HttpRequest) -> HttpRequest:
     # }}}
 
 
-def _populate_variables(line: str, variables: dict) -> dict:
+def _populate_variables(line: str, variables: dict) -> (dict, str):
     """
-    Counts anything with prefixed with a @ as a variable
+    Counts anything with prefixed with a @ as a variable.
+    If the name of the variable is `postscript`, the
+    postscript local variable is returned as the
+    second argument of the return tuple.
     """
     # _populate_variables {{{
+    postscript = None
+
     split = line.split("=")
     key = split[0].replace("@", "")
     value = split[1].rstrip()
-    variables[key] = value
-    return variables
+
+    if key == "postscript":
+        postscript = value
+    else:
+        variables[key] = value
+
+    return (variables, postscript)
     # }}}
 
 

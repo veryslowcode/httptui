@@ -95,8 +95,10 @@ Use the following conventions within the `.http` file
 
 $env.<VARIABLE>$ For environment variable
 
-[@name=value] For variable definition
+@name=value   For variable definition
 {{name}}      For variable usage
+
+@postscript   For script to run after specific request
 ```
 
 >[!NOTE]
@@ -107,6 +109,18 @@ $env.<VARIABLE>$ For environment variable
 >[!NOTE]
 >Also note that environment variables will be
 >loaded just before a request is sent.
+
+### Postscript
+
+When using `postscript` the expected value is a path to a python script
+that should be executed following the associated request. The second argument
+of `sys.argv` passed to the `postscript` is the `requests.Response` object
+from the sent request. The primary usecase for this capability is to
+use information received in the response, to set environment variables
+that can be used in another request, since environment variables are loaded
+at *runtime*.
+
+See the `postscript.py` file as an example.
 
 ## HTTP Methods
 
