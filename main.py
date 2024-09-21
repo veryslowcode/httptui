@@ -14,7 +14,7 @@ from queue import Queue
 from pathlib import Path
 from req_struct import HttpBodyType
 from dataclasses import dataclass, field
-from http_parser import HttpRequest, parse_http_file
+from http_parser import HttpRequest, parse_http_directory
 
 
 TITLE = "HTTP/TUI"      # For main application
@@ -49,6 +49,7 @@ class Theme:
     border_color: int
     active_color: int
     selected_color: int
+    directory_color: int
     # }}}
 
 
@@ -86,7 +87,7 @@ class BorderStyle(Enum):
 class Arguments:
     # Arguments {{{
     debug: bool = False
-    file: str = "requests.http"
+    directory: str = ""
     theme_file: str = "theme.ini"
     color_mode: ColorMode = ColorMode.Bit24
     border_style: BorderStyle = BorderStyle.Rounded
@@ -128,6 +129,21 @@ class ScrollState:
     # }}}
 
 
+class RequestAspect(Enum):
+    # RequestAspect {{{
+    FileName = 0,
+    Request = 1
+    # }}}
+
+
+@dataclass
+class DisplayRequest:
+    # DisplayRequest {{{
+    aspect: RequestAspect
+    item:   object
+    # }}}
+
+
 @dataclass
 class RenderState:
     # RenderState {{{
@@ -135,7 +151,9 @@ class RenderState:
     theme:   Theme
     args:    Arguments
     size:    tuple[int, int]
-    requests: list[HttpRequest]
+
+    directories: list[int]
+    requests:    list[DisplayRequest]
 
     selected:   int = 0
     active:     Section = Section.List
@@ -168,7 +186,7 @@ class Message(Enum):
 
 # Globals, be cautious with use
 global_exception: Exception = None
-global_request:   HttpRequest = None
+global_request:   DisplayRequest = None
 global_response:  requests.Response = None
 global_response_error: requests.RequestException = None
 
@@ -190,8 +208,8 @@ def main() -> None:
 def _main_loop(driver: any, args: Arguments) -> None:
     """
     Orchestrates all threads of the application.
-    Does so by spawning the messages appropriate
-    message based on keyboard input and triggering
+    Does so by spawning the appropriate message
+    based on keyboard input and triggering
     the update or request thread.
     """
     # _main_loop {{{
@@ -200,13 +218,27 @@ def _main_loop(driver: any, args: Arguments) -> None:
     hide_cursor()
     bus = Queue()
 
-    requests = parse_http_file(str(args.file))
+    requests = []
+    directories = []
+    parsed = parse_http_directory(str(args.directory))
+
+    offset = 0
+    for key, value in parsed.items():
+        requests.append(DisplayRequest(RequestAspect.FileName, key))
+        directories.append(offset)
+        offset += 1
+        for request in value:
+            requests.append(
+                DisplayRequest(RequestAspect.Request, request)
+            )
+            offset += 1
 
     global global_request
     global_request = requests[0]
 
     update_thread = threading.Thread(target=update_loop,
-                                     args=(bus, theme, args, requests),
+                                     args=(bus, theme, args,
+                                           requests, directories),
                                      daemon=True)
     threads = {
         "update_thread": update_thread,
@@ -372,8 +404,9 @@ def _send_request(request: HttpRequest, bus: Queue) -> None:
     # }}}
 
 
-def _update_loop(bus: Queue, theme: Theme, args: Arguments,
-                 requests: list[HttpRequest]) -> None:
+def _update_loop(bus: Queue, theme: Theme,
+                 args: Arguments, requests: list[DisplayRequest],
+                 directories: list[int]) -> None:
     """
     Processes messages produced by the update thread,
     updating render state and triggering a rerender.
@@ -385,11 +418,8 @@ def _update_loop(bus: Queue, theme: Theme, args: Arguments,
 
     state = RenderState(
         borders=borders, theme=theme, args=args,
-        size=size, requests=requests
+        size=size, requests=requests, directories=directories
     )
-
-    if len(requests) > 0:
-        state.definition = populate_request_definition(state)
 
     render(state, True)  # Ensure screen is initially cleared
 
@@ -581,6 +611,12 @@ def enable_buffer() -> None:
     # }}}
 
 
+def get_bold() -> str:
+    # get_bold {{{
+    return f"{CSI}1m"
+    # }}}
+
+
 def get_clear_line_from_cursor() -> str:
     # clear_line_from_cursor {{{
     return f"{CSI}0K"
@@ -661,17 +697,13 @@ def handle_bus_event(message: Message, state: RenderState
                     updateflag = False
 
             case Message.Expand:
+                state.scroll.request = 0
+                state.scroll.response = 0
                 if state.expanded != Expanded.Main:
-                    state.scroll.request = 0
-                    state.scroll.response = 0
                     state.expanded = Expanded.Main
                 elif state.active == Section.Request:
-                    state.scroll.request = 0
-                    state.scroll.response = 0
                     state.expanded = Expanded.Request
                 elif state.active == Section.Response:
-                    state.scroll.request = 0
-                    state.scroll.response = 0
                     state.expanded = Expanded.Response
                 else:
                     return (state, False, False)
@@ -688,7 +720,9 @@ def handle_bus_event(message: Message, state: RenderState
                 resizeflag = True
 
             case Message.AwaitRequest:
-                if state.expanded != Expanded.Main:
+                current = state.requests[state.selected].aspect
+                if state.expanded != Expanded.Main or \
+                        current != RequestAspect.Request:
                     return (state, False, False)
                 else:
                     state.response = []
@@ -740,9 +774,9 @@ def parse_args() -> Arguments:
                         help="Border style: 'single' or 'double' " +
                         "(defaults to 'single')")
 
-    parser.add_argument("-f", "--file",
-                        help="Path to requests file " +
-                        "(defaults to script 'requests.http')")
+    parser.add_argument("-d", "--directory",
+                        help="Path to requests directory " +
+                        "(defaults to script directory)")
 
     parser.add_argument("-g", "--debug", action="store_true",
                         help=argparse.SUPPRESS)
@@ -765,11 +799,10 @@ def parse_args() -> Arguments:
         border = (BorderStyle)(parsed_args.border.lower())
         args.border_style = border
 
-    if parsed_args.file is not None:
-        args.file = parsed_args.file
+    if parsed_args.directory is not None:
+        args.directory = parsed_args.directory
     else:
-        scriptdir = Path(__file__).parent
-        args.file = Path(scriptdir, "requests.http")
+        args.directory = Path(__file__).parent
 
     args.debug = parsed_args.debug
 
@@ -803,13 +836,18 @@ def parse_colors(args: Arguments) -> Theme:
         "active_request_color", cp[mode]["active_request_color"],
         args.color_mode
     )
+    directory_color = validate_colors(
+        "directory_color", cp[mode]["directory_color"],
+        args.color_mode
+    )
 
     return Theme(
         text_color=text_color,
         title_color=title_color,
         border_color=border_color,
         active_color=active_color,
-        selected_color=selected_color
+        selected_color=selected_color,
+        directory_color=directory_color
     )
     # }}}
 
@@ -886,7 +924,10 @@ def populate_request_definition(state: RenderState) -> list[str]:
     width = width - offset
 
     lines = []
-    request = state.requests[state.selected]
+    if state.requests[state.selected].aspect != RequestAspect.Request:
+        return []
+
+    request = state.requests[state.selected].item
     lines.append(f"Method -> {request.method.value}")
 
     lines += break_line_width(
@@ -1057,22 +1098,41 @@ def render_list(state: RenderState) -> None:
     print(" List ", end="")
     set_foreground(color, state.args.color_mode)
 
+    virtual_index = 0
     for index in range(height - Y_OFFSET - offset):
         set_cursor(X_OFFSET - 1, Y_OFFSET + index + offset)
 
-        if (len(state.requests) > index):
-            request = state.requests[index + state.scroll.rlist]
-            name = request.name if request.name != "" else request.url
-            name = name.replace("\n", "").replace("\r", "")
-            name = cap_line_width(width, name)
-            line = f"{name}{' ' * (width - len(name))}"
+        if (len(state.requests) > virtual_index):
+            request = state.requests[virtual_index + state.scroll.rlist]
+            if request.aspect == RequestAspect.FileName:
+                name = request.item
+                name = cap_line_width(width, name)
+                name = f"{name}{' ' * (width - len(name))}"
+
+                prefix = f"{get_bold()}"
+                suffix = f"{reset_bold()}"
+
+                name = f"{prefix}{name}{suffix}"
+            else:
+                name = f" {request.item.name}" \
+                    if request.item.name != "" \
+                    else request.item.url
+                name = name.replace("\n", "").replace("\r", "")
+                name = f"{name}{' ' * (width - len(name))}"
+                name = cap_line_width(width, name)
+
+            line = name
         else:
             line = ' ' * width
 
         print(f"{state.borders['v_border']}", end="")
 
-        if state.selected == index + state.scroll.rlist:
+        if state.selected == virtual_index + state.scroll.rlist:
             set_foreground(state.theme.selected_color, state.args.color_mode)
+            print(line, end="")
+            set_foreground(color, state.args.color_mode)
+        elif request is not None and request.aspect == RequestAspect.FileName:
+            set_foreground(state.theme.directory_color, state.args.color_mode)
             print(line, end="")
             set_foreground(color, state.args.color_mode)
         else:
@@ -1082,6 +1142,8 @@ def render_list(state: RenderState) -> None:
 
         set_cursor(width + X_OFFSET, Y_OFFSET + index + offset)
         print(f"{state.borders['v_border']}", end="")
+
+        virtual_index += 1
 
     set_cursor(X_OFFSET - 1, height)
     print(bottom, end="")
@@ -1227,20 +1289,26 @@ def render_request(state: RenderState) -> None:
     # }}}
 
 
+def reset_bold() -> str:
+    # reset_bold {{{
+    return f"{CSI}22m"
+    # }}}
+
+
 def reset_style() -> None:
     # reset_style {{{
     print(f"{CSI}0m", end="")
     # }}}
 
 
-def send_request(request: HttpRequest, bus: Queue) -> None:
+def send_request(request: DisplayRequest, bus: Queue) -> None:
     """
     Primary function that comprises the request thread.
     Wraps implementation try/expect.
     """
     # send_request {{{
     try:
-        _send_request(request, bus)
+        _send_request(request.item, bus)
     except Exception as exception:
         global global_response_error
         global_response_error = exception
@@ -1306,15 +1374,16 @@ def update_active(state: RenderState, increase: bool) -> Section:
     # }}}
 
 
-def update_loop(bus: Queue, theme: Theme, args: Arguments,
-                requests: list[HttpRequest]) -> None:
+def update_loop(bus: Queue, theme: Theme,
+                args: Arguments, requests: list[DisplayRequest],
+                directories: list[int]) -> None:
     """
     Simple wrapper to ensure global exception is
     set, if needed, from the update thread.
     """
     # update_loop {{{
     try:
-        _update_loop(bus, theme, args, requests)
+        _update_loop(bus, theme, args, requests, directories)
     except Exception as exception:
         clear_screen()
 
