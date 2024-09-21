@@ -53,6 +53,22 @@ options:
                         Path to requests directory (defaults to script directory)
 ```
 
+### Bash/Powershell
+
+It is recommended that you create a function in your `.rc` / `$PROFILE` config. as seen below:
+
+`bashrc`
+
+```sh
+httptui() { python3 <PATH-TO-PROJECT>/main.py "$@" ;}
+```
+
+Powershell `$PROFILE`
+
+```ps1
+function httptui() { python <PATH-TO-PROJECT>\main.py @args}
+```
+
 ## File Format
 
 This application follows a `.http` file format almost the same
