@@ -53,6 +53,22 @@ options:
                         Path to requests directory (defaults to script directory)
 ```
 
+### Bash/Powershell
+
+It is recommended that you create a function in your `.rc` / `$PROFILE` config. as seen below:
+
+`bashrc`
+
+```sh
+httptui() { python3 <PATH-TO-PROJECT>/main.py "$@" ;}
+```
+
+Powershell `$PROFILE`
+
+```ps1
+function httptui() { python <PATH-TO-PROJECT>\main.py @args}
+```
+
 ## File Format
 
 This application follows a `.http` file format almost the same
@@ -77,6 +93,8 @@ Use the following conventions within the `.http` file
 # or //  For Comments
 &        For request name
 
+$env.<VARIABLE>$ For environment variable
+
 [@name=value] For variable definition
 {{name}}      For variable usage
 ```
@@ -85,6 +103,10 @@ Use the following conventions within the `.http` file
 >Variables must be defined before a request
 >and names (optional) must be defined before
 > a request, but after variables.
+
+>[!NOTE]
+>Also note that environment variables will be
+>loaded just before a request is sent.
 
 ## HTTP Methods
 

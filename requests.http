@@ -6,7 +6,7 @@ GET {{getPath}} {{version}}
 Host: {{host}}
 Accept: application/json
 
-@jsonPath=/api/create
+@jsonPath=$env.json_path$
 &JsonExample
 POST {{jsonPath}} {{version}}
 Host: {{host}}
