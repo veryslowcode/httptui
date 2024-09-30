@@ -13,6 +13,7 @@ class KeyCodes(Enum):
     LEFT = "h"
     RIGHT = "l"
     EXPAND = "e"
+    COPY = "c"
     # }}}
 
 

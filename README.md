@@ -4,7 +4,7 @@ TUI application for storing and sending HTTP requests
 without the need to leave your terminal. The interface
 and input event system is built from scratch, with the
 only dependencies being those related to the `requests`
-package.
+and `pyperclip` packages.
 
 ![Demo](demo.png)
 
@@ -30,6 +30,7 @@ python >= v3.12.x
 # Only applicable to request
 # and response sections.
 `e`         # Expand section
+`c`         # Copy content of section
 
 # Used when not in expanded mode
 `space`     # Send request

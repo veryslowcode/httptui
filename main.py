@@ -9,6 +9,7 @@ import signal
 import requests
 import argparse
 import traceback
+import pyperclip
 import threading
 import configparser
 from enum import Enum
@@ -183,6 +184,7 @@ class Message(Enum):
     AwaitRequest = 5
     ResponseReceived = 6
     ResponseErrored = 7
+    Copy = 8
     # }}}
 
 
@@ -268,6 +270,9 @@ def _main_loop(driver: any, args: Arguments) -> None:
 
             case driver.KeyCodes.EXPAND.value:
                 bus.put(Message.Expand)
+
+            case driver.KeyCodes.COPY.value:
+                bus.put(Message.Copy)
 
             case driver.KeyCodes.SPACE.value:
                 bus.put(Message.AwaitRequest)
@@ -658,6 +663,7 @@ def format_multipart_body(request: HttpRequest) -> dict:
     return pairs
     # }}}
 
+
 def get_bold() -> str:
     # get_bold {{{
     return f"{CSI}1m"
@@ -770,6 +776,13 @@ def handle_bus_event(message: Message, state: RenderState
                     state.active = update_active(state, True)
                 else:
                     updateflag = False
+
+            case Message.Copy:
+                updateflag = False
+                if state.active == Section.Request:
+                    pyperclip.copy("\n".join(str(x) for x in state.definition))
+                elif state.active == Section.Response:
+                    pyperclip.copy("\n".join(str(x) for x in state.response))
 
             case Message.Expand:
                 state.scroll.request = 0
