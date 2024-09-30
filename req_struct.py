@@ -45,6 +45,7 @@ class HttpRequest():
     method: HttpMethod
     name: str = ""   # Non-essential
 
+    prescript: str = None
     postscript: str = None
 
     def __str__(self) -> str:
