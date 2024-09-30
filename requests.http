@@ -1,6 +1,7 @@
 @host=https://example.com
-@getPath=/api
+@getPath=$env.get_path$
 @version=HTTP/1.1
+@prescript=./prescript.py
 @postscript=./postscript.py
 &ExampleGet
 GET {{getPath}} {{version}}

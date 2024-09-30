@@ -98,6 +98,7 @@ $env.<VARIABLE>$ For environment variable
 @name=value   For variable definition
 {{name}}      For variable usage
 
+@prescript    For script to run before specific request
 @postscript   For script to run after specific request
 ```
 

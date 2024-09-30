@@ -376,6 +376,9 @@ def _send_request(request: HttpRequest, bus: Queue) -> None:
     data = None
     djson = None
 
+    if request.prescript is not None:
+        execute_prescript(request.prescript)
+
     headers = {}
     for key, value in request.headers.items():
         key = get_env_variables(key)
@@ -594,6 +597,21 @@ def execute_postscript(path: str, response: requests.Response) -> None:
     assert script.exists(), f"Script {path} not found"
     try:
         exec(open(script).read(), sys.argv.append(response))
+    except Exception as e:
+        raise Exception(f"Error running postscript {e}")
+    # }}}
+
+
+def execute_prescript(path: str) -> None:
+    """
+    Given a path, this function executes the
+    python script at that path.
+    """
+    # execute_prescript {{{
+    script = Path(path).expanduser()
+    assert script.exists(), f"Script {path} not found"
+    try:
+        exec(open(script).read())
     except Exception as e:
         raise Exception(f"Error running postscript {e}")
     # }}}
